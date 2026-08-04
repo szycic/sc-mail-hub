@@ -1,16 +1,22 @@
+"""Database Initialization and Session Management for SC Mail Hub.
+
+Configures SQLAlchemy engine, sessionmaker, base declarative model,
+and manages SQLite automatic column migrations.
+"""
+
+from pathlib import Path
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import sessionmaker, declarative_base
-from pathlib import Path
 from sc_mail_hub.config import settings
 
 
 def _ensure_sqlite_parent_dir(database_url: str) -> None:
+    """Ensure the parent directory for a file-based SQLite database exists."""
     parsed = make_url(database_url)
     if not parsed.drivername.startswith("sqlite"):
         return
 
-    # In-memory sqlite DB does not map to a filesystem path.
     db_file = parsed.database
     if not db_file or db_file == ":memory:":
         return
@@ -33,8 +39,10 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
 
+
 def init_db():
-    from sc_mail_hub import models  # Ensure models are loaded
+    """Initialize database tables and execute lightweight SQLite column migrations."""
+    from sc_mail_hub import models  # Ensure models are imported
     Base.metadata.create_all(bind=engine)
     with engine.connect() as conn:
         migrations = [
@@ -52,7 +60,9 @@ def init_db():
             except Exception:
                 pass
 
+
 def get_db():
+    """FastAPI Dependency for obtaining a database session."""
     db = SessionLocal()
     try:
         yield db

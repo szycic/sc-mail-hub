@@ -1,3 +1,9 @@
+"""Email Ingestion & PDF Generation Service for SC Mail Hub.
+
+Handles IMAP synchronization, sample ingest seeding, email decoding,
+and ReportLab A4 PDF generation with full Polish UTF-8 character support.
+"""
+
 import imaplib
 import email
 import json

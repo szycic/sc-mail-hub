@@ -1,9 +1,16 @@
+"""AI Task Extraction Service for SC Mail Hub.
+
+Integrates with OpenAI, Gemini, Groq, and built-in Smart Heuristic Engine
+to extract actionable tasks, summary descriptions, priorities, dates, and links from emails.
+"""
+
 import re
 import json
 import httpx
 from typing import Dict, Any, Optional
 from sqlalchemy.orm import Session
 from sc_mail_hub.models import EmailMessage, TaskCandidate, AISettings
+
 
 class AIService:
     @staticmethod

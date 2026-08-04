@@ -1,0 +1,248 @@
+/**
+ * Task Review Modal Controller & Link Highlighting Logic for SC Mail Hub.
+ */
+
+let currentReviewRawEmailText = "";
+
+async function openTaskReviewModal(candidateId) {
+  const card = document.getElementById(`candidate-card-${candidateId}`);
+  if (card) card.style.opacity = "0.6";
+
+  const candidate = currentCandidates.find(c => c.id === candidateId);
+
+  // If candidate was already AI processed or created, open modal immediately with existing data!
+  if (candidate && (candidate.status === "AI_PROCESSED" || candidate.status === "CREATED")) {
+    fillTaskReviewForm(candidate);
+    if (card) card.style.opacity = "1";
+    const modal = document.getElementById("task-review-modal");
+    if (modal) modal.classList.add("active");
+    return;
+  }
+
+  showToast("Running AI extraction for task details...", "info");
+
+  try {
+    const res = await fetch(`/api/inbox/candidates/${candidateId}/prepare-task`, {
+      method: "POST"
+    });
+    const data = await res.json();
+
+    if (res.ok) {
+      fillTaskReviewForm(data);
+      loadCandidates();
+      const modal = document.getElementById("task-review-modal");
+      if (modal) modal.classList.add("active");
+      if (card) card.style.opacity = "1";
+    } else {
+      showToast(data.detail || "Failed to prepare task", "error");
+      if (card) card.style.opacity = "1";
+    }
+  } catch (err) {
+    showToast(`Error: ${err.message}`, "error");
+    if (card) card.style.opacity = "1";
+  }
+}
+
+function updatePriorityDropdownInModal(candidate) {
+  const prioritySelect = document.getElementById("review-priority");
+  if (!prioritySelect) return;
+
+  const priorityMapping = currentFieldMappings.find(m => m.task_field === "priority");
+  let options = [];
+
+  if (priorityMapping && priorityMapping.notion_property_name) {
+    const matchedProp = fetchedNotionProperties.find(p => p.name === priorityMapping.notion_property_name);
+    if (matchedProp && matchedProp.options && matchedProp.options.length > 0) {
+      options = [...matchedProp.options];
+    }
+
+    if (priorityMapping.value_mappings_json) {
+      try {
+        const valMapObj = JSON.parse(priorityMapping.value_mappings_json);
+        if (typeof valMapObj === "object") {
+          Object.values(valMapObj).forEach(val => {
+            if (val && !options.includes(val)) {
+              options.push(val);
+            }
+          });
+        }
+      } catch (e) { }
+    }
+  }
+
+  if (options.length === 0) {
+    options = ["HIGH", "MEDIUM", "LOW"];
+  }
+
+  prioritySelect.innerHTML = options.map(opt => `<option value="${escapeHtml(opt)}">${escapeHtml(opt)}</option>`).join("");
+
+  let targetVal = candidate.priority || "MEDIUM";
+  if (priorityMapping && priorityMapping.value_mappings_json) {
+    try {
+      const valMapObj = JSON.parse(priorityMapping.value_mappings_json);
+      if (valMapObj[targetVal]) {
+        targetVal = valMapObj[targetVal];
+      }
+    } catch (e) { }
+  }
+
+  // Case-insensitive match against allowed Notion schema options
+  let matchedOption = options.find(opt => opt.toLowerCase() === targetVal.toLowerCase());
+
+  if (matchedOption) {
+    prioritySelect.value = matchedOption;
+  } else {
+    // Fallback to Medium or Normal before resorting to first option
+    let defaultMatch = options.find(opt => opt.toLowerCase() === "medium" || opt.toLowerCase() === "normal") || options[0];
+    if (defaultMatch) {
+      prioritySelect.value = defaultMatch;
+    }
+  }
+}
+
+function updateEmailBodyLinkHighlight() {
+  const bodyEl = document.getElementById("review-email-body");
+  const urlInput = document.getElementById("review-url");
+  if (!bodyEl) return;
+
+  const targetUrl = (urlInput?.value || "").trim();
+  bodyEl.innerHTML = highlightExactTargetLink(currentReviewRawEmailText, targetUrl);
+}
+
+function highlightExactTargetLink(text, targetUrl) {
+  if (!text) return "";
+
+  let targetClean = (targetUrl || "").trim().toLowerCase();
+  if (targetClean.endsWith('/')) targetClean = targetClean.slice(0, -1);
+
+  const safeText = escapeHtml(text);
+  const urlRegex = /((?:https?:\/\/|www\.)[^\s<>\"'\(\)]+)/gi;
+
+  return safeText.replace(urlRegex, (matchedUrl) => {
+    let rawUrl = matchedUrl
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#039;/g, "'");
+
+    let cleanUrl = rawUrl.replace(/[\.\,\;\)]+$/, '').toLowerCase();
+    if (cleanUrl.endsWith('/')) cleanUrl = cleanUrl.slice(0, -1);
+
+    let matchUrlLower = rawUrl.toLowerCase();
+    if (matchUrlLower.endsWith('/')) matchUrlLower = matchUrlLower.slice(0, -1);
+
+    const hrefUrl = matchedUrl.startsWith('www.') ? `https://${matchedUrl}` : matchedUrl;
+
+    const isTarget = targetClean.length > 0 && (
+      cleanUrl === targetClean ||
+      matchUrlLower === targetClean ||
+      (cleanUrl.length > 10 && targetClean.includes(cleanUrl)) ||
+      (targetClean.length > 10 && cleanUrl.includes(targetClean))
+    );
+
+    if (isTarget) {
+      return `<mark class="target-link-highlight"><a href="${hrefUrl}" target="_blank">${matchedUrl}</a></mark>`;
+    }
+    return `<a href="${hrefUrl}" target="_blank" class="email-link">${matchedUrl}</a>`;
+  });
+}
+
+async function fillTaskReviewForm(candidate) {
+  const idInput = document.getElementById("review-candidate-id");
+  const titleInput = document.getElementById("review-title");
+  const summaryInput = document.getElementById("review-summary");
+  const urlInput = document.getElementById("review-url");
+  const startDateInput = document.getElementById("review-start-date");
+  const deadlineInput = document.getElementById("review-deadline");
+
+  if (idInput) idInput.value = String(candidate.id);
+  if (titleInput) titleInput.value = candidate.title || "";
+  if (summaryInput) summaryInput.value = candidate.summary || "";
+  if (urlInput) urlInput.value = candidate.source_url || "";
+  if (startDateInput) startDateInput.value = formatDateForPicker(candidate.start_date);
+  if (deadlineInput) deadlineInput.value = formatDateForPicker(candidate.deadline);
+
+  updatePriorityDropdownInModal(candidate);
+
+  // Populate Right Column: Original Email Reference with Link Highlighting
+  const senderEl = document.getElementById("review-email-sender");
+  const recipientEl = document.getElementById("review-email-recipient");
+  const subjectEl = document.getElementById("review-email-subject");
+  const dateEl = document.getElementById("review-email-received");
+  const bodyEl = document.getElementById("review-email-body");
+
+  if (senderEl) senderEl.textContent = candidate.sender || "Unknown Sender";
+  if (recipientEl) recipientEl.textContent = candidate.recipient || "Me";
+  if (subjectEl) subjectEl.textContent = candidate.subject || candidate.title || "No Subject";
+  if (dateEl) dateEl.textContent = candidate.received_at || "";
+
+  if (bodyEl) {
+    bodyEl.innerHTML = '<div style="color:var(--text-dim);">⏳ Loading original email text...</div>';
+    try {
+      const emailRes = await fetch(`/api/inbox/candidates/${candidate.id}/email`);
+      if (emailRes.ok) {
+        const emailData = await emailRes.json();
+        currentReviewRawEmailText = emailData.body_text || candidate.summary || "";
+      } else {
+        currentReviewRawEmailText = candidate.summary || "";
+      }
+    } catch (e) {
+      currentReviewRawEmailText = candidate.summary || "";
+    }
+
+    // Auto-extract link if input is empty
+    if (urlInput && !urlInput.value.trim() && currentReviewRawEmailText) {
+      const linkMatch = currentReviewRawEmailText.match(/https?:\/\/[^\s<>\"'\(\)]+/i);
+      if (linkMatch) {
+        urlInput.value = linkMatch[0].replace(/[\.\,\;\)]+$/, '');
+      }
+    }
+
+    updateEmailBodyLinkHighlight();
+  }
+}
+
+function closeTaskReviewModal(e) {
+  if (e && e.target && e.target !== e.currentTarget) return;
+  const modal = document.getElementById("task-review-modal");
+  if (modal) modal.classList.remove("active");
+}
+
+async function submitReviewedTaskToNotion() {
+  const candidateId = Number(document.getElementById("review-candidate-id")?.value || 0);
+  if (!candidateId) {
+    showToast("Missing candidate id", "error");
+    return;
+  }
+
+  const payload = {
+    title: document.getElementById("review-title")?.value || "",
+    summary: document.getElementById("review-summary")?.value || "",
+    source_url: document.getElementById("review-url")?.value || null,
+    priority: document.getElementById("review-priority")?.value || "MEDIUM",
+    start_date: document.getElementById("review-start-date")?.value || null,
+    deadline: document.getElementById("review-deadline")?.value || null
+  };
+
+  showToast("Creating reviewed task in Notion...", "info");
+
+  try {
+    const res = await fetch(`/api/inbox/candidates/${candidateId}/create-task`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+
+    if (res.ok && data.notion_url) {
+      closeTaskReviewModal();
+      showToast("Task successfully created in Notion!", "success");
+      loadCandidates(currentStatusFilter);
+    } else {
+      showToast(data.detail || "Failed to create task in Notion", "error");
+    }
+  } catch (err) {
+    showToast(`Error: ${err.message}`, "error");
+  }
+}

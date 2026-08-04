@@ -1,9 +1,17 @@
+"""Application Configuration Module for SC Mail Hub.
+
+Loads environment variables from .env file or applies defaults for database settings,
+IMAP synchronization intervals, server host/port, secret keys, and default API credentials.
+"""
+
 import os
 from dotenv import load_dotenv
 
 load_dotenv()
 
+
 class Settings:
+    """Central settings class holding system environment configuration."""
     PROJECT_NAME: str = "SC Mail Hub"
     VERSION: str = "1.0.0"
     DATABASE_PATH: str = os.getenv("DATABASE_PATH") or os.getenv("DB_PATH", "data/sc_mail_hub.db")
@@ -24,5 +32,6 @@ class Settings:
     # Default AI Settings
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
+
 
 settings = Settings()

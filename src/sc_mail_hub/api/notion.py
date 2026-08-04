@@ -1,3 +1,9 @@
+"""Notion Integration API Router for SC Mail Hub.
+
+Manages Notion API token, database schema fetching, test connection endpoints,
+and flexible database field mapping configuration.
+"""
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 import json

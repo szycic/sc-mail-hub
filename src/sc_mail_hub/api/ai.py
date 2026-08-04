@@ -1,3 +1,9 @@
+"""AI Settings API Router for SC Mail Hub.
+
+Manages AI provider configuration (Mock, OpenAI, Gemini, Groq),
+API key settings, model name choices, and connection test endpoints.
+"""
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sc_mail_hub.database import get_db

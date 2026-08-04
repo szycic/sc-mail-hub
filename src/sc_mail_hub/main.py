@@ -1,10 +1,17 @@
+"""FastAPI Application Entry Point for SC Mail Hub.
+
+Sets up application routes, static file serving, HTML templates,
+lifespan background email polling loop, and initial default configuration.
+"""
+
 import os
-from fastapi import FastAPI, Request, Depends
+import asyncio
+from contextlib import asynccontextmanager
+from fastapi import FastAPI, Request
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
-from contextlib import asynccontextmanager
 
 from sc_mail_hub.config import settings
 from sc_mail_hub.database import engine, Base, init_db, SessionLocal
@@ -12,11 +19,12 @@ from sc_mail_hub.models import NotionConfig, NotionFieldMapping, AISettings, Ema
 from sc_mail_hub.services.email_service import EmailService
 from sc_mail_hub.services.ai_service import AIService
 from sc_mail_hub.api import inbox, accounts, notion, ai
-import asyncio
 
 init_db()
 
+
 def setup_defaults(db: Session):
+    """Seed initial default configurations for Notion and AI settings if absent."""
     notion_cfg = db.query(NotionConfig).first()
     if not notion_cfg:
         notion_cfg = NotionConfig(
@@ -36,11 +44,13 @@ def setup_defaults(db: Session):
         
     db.commit()
 
+
 _db = SessionLocal()
 try:
     setup_defaults(_db)
 finally:
     _db.close()
+
 
 async def background_email_sync_loop():
     """Background task running every 5 minutes to fetch emails automatically."""
@@ -63,8 +73,10 @@ async def background_email_sync_loop():
         except Exception as e:
             print(f"Background loop error: {e}")
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """Manage application background task lifecycle on startup and shutdown."""
     sync_task = asyncio.create_task(background_email_sync_loop())
     yield
     sync_task.cancel()
@@ -72,6 +84,7 @@ async def lifespan(app: FastAPI):
         await sync_task
     except asyncio.CancelledError:
         pass
+
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -90,9 +103,12 @@ app.include_router(accounts.router)
 app.include_router(notion.router)
 app.include_router(ai.router)
 
+
 @app.get("/")
 def root_redirect():
+    """Redirect root path to the main inbox UI dashboard."""
     return RedirectResponse(url="/inbox")
+
 
 @app.get("/inbox")
 @app.get("/notion")
@@ -100,7 +116,9 @@ def root_redirect():
 @app.get("/ai")
 @app.get("/admin")
 def index_page(request: Request):
+    """Serve single-page app index HTML template."""
     return templates.TemplateResponse(request=request, name="index.html")
+
 
 if __name__ == "__main__":
     import uvicorn

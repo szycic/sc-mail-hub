@@ -1,3 +1,9 @@
+"""Inbox API Router for SC Mail Hub.
+
+Manages task candidate listing, stage transitions (PENDING, AI_PROCESSED, CREATED, IGNORED),
+AI analysis execution, sample email ingestion, PDF generation, and WebSocket progress streaming.
+"""
+
 import asyncio
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect

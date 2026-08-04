@@ -1,3 +1,9 @@
+"""Email Accounts API Router for SC Mail Hub.
+
+Manages email account connections, IMAP authentication testing,
+manual email sync triggers, and account deletion.
+"""
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
