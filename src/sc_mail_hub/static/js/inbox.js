@@ -554,6 +554,16 @@ async function bulkReprocessCandidates(allowFallback = false) {
 async function bulkIgnoreCandidates() {
   if (selectedCandidateIds.size === 0) return;
   const ids = Array.from(selectedCandidateIds);
+
+  ids.forEach(id => {
+    const card = document.getElementById(`candidate-card-${id}`);
+    if (card) {
+      card.style.transition = "opacity 0.2s ease";
+      card.style.opacity = "0.3";
+      card.style.pointerEvents = "none";
+    }
+  });
+
   try {
     const res = await fetch("/api/inbox/candidates/batch-ignore", {
       method: "POST",
@@ -567,9 +577,17 @@ async function bulkIgnoreCandidates() {
       updateBulkActionUI();
       loadCandidates();
     } else {
+      ids.forEach(id => {
+        const card = document.getElementById(`candidate-card-${id}`);
+        if (card) { card.style.opacity = "1"; card.style.pointerEvents = "auto"; }
+      });
       showToast(data.detail || "Failed batch ignore", "error");
     }
   } catch (err) {
+    ids.forEach(id => {
+      const card = document.getElementById(`candidate-card-${id}`);
+      if (card) { card.style.opacity = "1"; card.style.pointerEvents = "auto"; }
+    });
     showToast(`Error: ${err.message}`, "error");
   }
 }
@@ -577,6 +595,16 @@ async function bulkIgnoreCandidates() {
 async function bulkUnignoreCandidates() {
   if (selectedCandidateIds.size === 0) return;
   const ids = Array.from(selectedCandidateIds);
+
+  ids.forEach(id => {
+    const card = document.getElementById(`candidate-card-${id}`);
+    if (card) {
+      card.style.transition = "opacity 0.2s ease";
+      card.style.opacity = "0.3";
+      card.style.pointerEvents = "none";
+    }
+  });
+
   try {
     const res = await fetch("/api/inbox/candidates/batch-unignore", {
       method: "POST",
@@ -590,9 +618,17 @@ async function bulkUnignoreCandidates() {
       updateBulkActionUI();
       loadCandidates();
     } else {
+      ids.forEach(id => {
+        const card = document.getElementById(`candidate-card-${id}`);
+        if (card) { card.style.opacity = "1"; card.style.pointerEvents = "auto"; }
+      });
       showToast(data.detail || "Failed batch unignore", "error");
     }
   } catch (err) {
+    ids.forEach(id => {
+      const card = document.getElementById(`candidate-card-${id}`);
+      if (card) { card.style.opacity = "1"; card.style.pointerEvents = "auto"; }
+    });
     showToast(`Error: ${err.message}`, "error");
   }
 }
@@ -616,6 +652,13 @@ function bulkOpenNotionTasks() {
 }
 
 async function ignoreCandidate(candidateId) {
+  const card = document.getElementById(`candidate-card-${candidateId}`);
+  if (card) {
+    card.style.transition = "opacity 0.2s ease, transform 0.2s ease";
+    card.style.opacity = "0.3";
+    card.style.pointerEvents = "none";
+  }
+
   try {
     const res = await fetch(`/api/inbox/candidates/${candidateId}/ignore`, {
       method: "POST"
@@ -623,8 +666,19 @@ async function ignoreCandidate(candidateId) {
     if (res.ok) {
       showToast("Task candidate ignored", "info");
       loadCandidates();
+    } else {
+      if (card) {
+        card.style.opacity = "1";
+        card.style.pointerEvents = "auto";
+      }
+      const data = await res.json();
+      showToast(data.detail || "Failed to ignore candidate", "error");
     }
   } catch (err) {
+    if (card) {
+      card.style.opacity = "1";
+      card.style.pointerEvents = "auto";
+    }
     showToast(`Error: ${err.message}`, "error");
   }
 }
@@ -692,6 +746,13 @@ async function reprocessCandidateWithAi(candidateId, allowFallback = false) {
 }
 
 async function unignoreCandidate(candidateId) {
+  const card = document.getElementById(`candidate-card-${candidateId}`);
+  if (card) {
+    card.style.transition = "opacity 0.2s ease, transform 0.2s ease";
+    card.style.opacity = "0.3";
+    card.style.pointerEvents = "none";
+  }
+
   try {
     const res = await fetch(`/api/inbox/candidates/${candidateId}/unignore`, {
       method: "POST"
@@ -701,9 +762,17 @@ async function unignoreCandidate(candidateId) {
       showToast(data.message || "Task candidate restored", "info");
       loadCandidates();
     } else {
+      if (card) {
+        card.style.opacity = "1";
+        card.style.pointerEvents = "auto";
+      }
       showToast(data.detail || "Failed to restore candidate", "error");
     }
   } catch (err) {
+    if (card) {
+      card.style.opacity = "1";
+      card.style.pointerEvents = "auto";
+    }
     showToast(`Error: ${err.message}`, "error");
   }
 }

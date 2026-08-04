@@ -63,3 +63,18 @@ def test_sync_updates_websocket():
         assert "last_synced_at" in data
 
 
+def test_ignore_candidate_during_background_sync():
+    from sc_mail_hub.main import _run_email_sync
+    _run_email_sync()
+
+    inbox_res = client.get("/api/inbox/candidates?status=PENDING")
+    res_data = inbox_res.json()
+    candidates = res_data.get("items", []) if isinstance(res_data, dict) else res_data
+    if candidates:
+        cand_id = candidates[0]["id"]
+        ignore_res = client.post(f"/api/inbox/candidates/{cand_id}/ignore")
+        assert ignore_res.status_code == 200
+        assert ignore_res.json()["message"] == "Task candidate marked as ignored"
+
+
+

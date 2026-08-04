@@ -117,6 +117,13 @@ class EmailService:
         fetched_messages = []
         mail = None
         try:
+            # Release any open DB read transaction before starting network I/O
+            if db:
+                try:
+                    db.commit()
+                except Exception:
+                    pass
+
             logger.info(f"📧 [IMAP] Connecting to {host}:{port} for account '{account.email_address}'...")
             mail = imaplib.IMAP4_SSL(host, port, timeout=settings.IMAP_SOCKET_TIMEOUT_SECONDS)
             mail.login(username, password)

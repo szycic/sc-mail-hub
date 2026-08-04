@@ -113,6 +113,9 @@ def _run_email_sync():
             return
 
         accs = db.query(EmailAccount).all()
+        # Explicitly commit initial read transaction so no SQLite lock is held during IMAP network socket downloads
+        db.commit()
+
         for acc in accs:
             msgs = EmailService.fetch_from_imap(acc, db)
             for msg in msgs:
