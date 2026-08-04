@@ -24,13 +24,13 @@ def _ensure_sqlite_parent_dir(database_url: str) -> None:
     Path(db_file).expanduser().parent.mkdir(parents=True, exist_ok=True)
 
 
-_ensure_sqlite_parent_dir(settings.DATABASE_URL)
+_ensure_sqlite_parent_dir(settings.DB_URL)
 
 # SQLite configuration requires check_same_thread=False for multithreaded FastAPI requests
-connect_args = {"check_same_thread": False} if settings.DATABASE_URL.startswith("sqlite") else {}
+connect_args = {"check_same_thread": False} if settings.DB_URL.startswith("sqlite") else {}
 
 engine = create_engine(
-    settings.DATABASE_URL,
+    settings.DB_URL,
     connect_args=connect_args,
     echo=False
 )
