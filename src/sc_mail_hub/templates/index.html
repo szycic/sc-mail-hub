@@ -63,7 +63,8 @@
           <button class="btn btn-primary btn-sm" onclick="triggerSampleIngest()">
             ⚡ Load Emails
           </button>
-          <button class="btn btn-outline btn-sm" style="color:#ef4444; border-color:rgba(239,68,68,0.4);" onclick="emptyInbox()">
+          <button class="btn btn-outline btn-sm" style="color:#ef4444; border-color:rgba(239,68,68,0.4);"
+            onclick="emptyInbox()">
             🗑️ Empty Inbox
           </button>
         </div>
@@ -208,19 +209,20 @@
             <label style="font-size:13px; font-weight:600; color:var(--text-muted);">AI Provider</label>
             <select id="ai-provider" class="select-input">
               <option value="mock">Built-in Smart Heuristic Engine (No API Key Required)</option>
-              <option value="openai">OpenAI (GPT-4o-mini / GPT-4o)</option>
-              <option value="gemini">Google Gemini API</option>
-              <option value="groq">Groq Cloud (Llama 3.3 / Mixtral)</option>
+              <option value="openai">OpenAI (ChatGPT)</option>
+              <option value="gemini">Google Gemini</option>
+              <option value="groq">Groq Cloud (Llama / Mixtral)</option>
             </select>
           </div>
           <div>
-            <label style="font-size:13px; font-weight:600; color:var(--text-muted);">Model Name <span style="color:#ef4444;">*</span></label>
-            <input type="text" id="ai-model" class="text-input" placeholder="e.g. llama-3.3-70b-versatile, gemini-3.1-flash-lite, gpt-4o-mini" required>
+            <label style="font-size:13px; font-weight:600; color:var(--text-muted);">Model Name</label>
+            <input type="text" id="ai-model" class="text-input"
+              placeholder="e.g. llama-3.3-70b-versatile, gemini-3.1-flash-lite, gpt-4o-mini">
           </div>
         </div>
 
         <div style="margin-bottom:16px;">
-          <label style="font-size:13px; font-weight:600; color:var(--text-muted);">API Key (Optional for Mock)</label>
+          <label style="font-size:13px; font-weight:600; color:var(--text-muted);">API Key</label>
           <input type="password" id="ai-key" class="text-input" placeholder="sk-... or AIzaSy...">
         </div>
 
@@ -246,7 +248,8 @@
         <button class="modal-close-btn" onclick="closeEmailPreviewModal()">&times;</button>
       </div>
       <div class="modal-body">
-        <pre id="modal-email-body" style="white-space:pre-wrap; font-family:inherit; font-size:14px; color:var(--text-main); line-height:1.6;"></pre>
+        <pre id="modal-email-body"
+          style="white-space:pre-wrap; font-family:inherit; font-size:14px; color:var(--text-main); line-height:1.6;"></pre>
       </div>
       <div class="modal-footer">
         <button class="btn btn-outline btn-sm" onclick="closeEmailPreviewModal()">Close Preview</button>
