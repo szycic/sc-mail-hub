@@ -45,3 +45,21 @@ def test_ignore_candidate():
         assert ignore_res.status_code == 200
         assert ignore_res.json()["message"] == "Task candidate marked as ignored"
 
+
+def test_inbox_stats_endpoint():
+    res = client.get("/api/inbox/stats")
+    assert res.status_code == 200
+    data = res.json()
+    assert "counts" in data
+    assert "last_synced_at" in data
+    assert "PENDING" in data["counts"]
+
+
+def test_sync_updates_websocket():
+    with client.websocket_connect("/api/inbox/ws/sync-updates") as websocket:
+        data = websocket.receive_json()
+        assert data.get("event") == "initial_stats"
+        assert "stats" in data
+        assert "last_synced_at" in data
+
+

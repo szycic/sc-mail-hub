@@ -55,6 +55,10 @@ def sync_account(account_id: int, db: Session = Depends(get_db)):
         AIService.ensure_candidate_from_email(msg, db)
         task_count += 1
 
+    from sc_mail_hub.api.inbox import set_last_synced_at, notify_sync_completed
+    set_last_synced_at()
+    notify_sync_completed()
+
     return {
         "message": f"Synced {len(new_messages)} emails. {task_count} candidates ready for review.",
         "emails_synced": len(new_messages),

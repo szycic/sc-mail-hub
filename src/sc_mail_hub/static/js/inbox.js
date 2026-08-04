@@ -167,26 +167,73 @@ function updateBulkActionUI() {
   }
 }
 
-async function loadInboxStats() {
-  try {
-    const res = await fetch("/api/inbox/stats");
-    if (!res.ok) return;
-    const data = await res.json();
-    const counts = data.counts || {};
+let syncUpdatesWs = null;
+let syncUpdatesReconnectTimer = null;
 
+function applyInboxStatsData(counts, lastSyncedAt) {
+  if (counts) {
     ["PENDING", "AI_PROCESSED", "CREATED", "IGNORED", "ALL"].forEach(st => {
       const badgeEl = document.getElementById(`badge-${st}`);
       if (badgeEl) {
         badgeEl.textContent = counts[st] !== undefined ? counts[st] : 0;
       }
     });
+  }
 
-    if (data.last_synced_at) {
-      lastSyncedIso = data.last_synced_at;
-      updateLastSyncedDisplay();
-    }
+  if (lastSyncedAt) {
+    lastSyncedIso = lastSyncedAt;
+    updateLastSyncedDisplay();
+  }
+}
+
+async function loadInboxStats() {
+  try {
+    const res = await fetch("/api/inbox/stats");
+    if (!res.ok) return;
+    const data = await res.json();
+    applyInboxStatsData(data.counts, data.last_synced_at);
   } catch (err) {
     console.error("Failed to load inbox stats:", err);
+  }
+}
+
+function initSyncUpdatesWebSocket() {
+  if (syncUpdatesWs) return;
+  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  const wsUrl = `${protocol}//${window.location.host}/api/inbox/ws/sync-updates`;
+
+  try {
+    syncUpdatesWs = new WebSocket(wsUrl);
+
+    syncUpdatesWs.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.event === "initial_stats" || data.event === "sync_completed") {
+          applyInboxStatsData(data.stats, data.last_synced_at);
+          if (data.event === "sync_completed" && typeof loadCandidates === "function") {
+            loadCandidates();
+          }
+        }
+      } catch (e) {
+        console.error("Error parsing sync WebSocket message:", e);
+      }
+    };
+
+    syncUpdatesWs.onclose = () => {
+      syncUpdatesWs = null;
+      if (!syncUpdatesReconnectTimer) {
+        syncUpdatesReconnectTimer = setTimeout(() => {
+          syncUpdatesReconnectTimer = null;
+          initSyncUpdatesWebSocket();
+        }, 5000);
+      }
+    };
+
+    syncUpdatesWs.onerror = () => {
+      if (syncUpdatesWs) syncUpdatesWs.close();
+    };
+  } catch (e) {
+    console.error("Failed to initialize sync WebSocket:", e);
   }
 }
 
@@ -215,7 +262,12 @@ function updateLastSyncedDisplay() {
   el.textContent = `Last synced: ${label}`;
 }
 
-setInterval(updateLastSyncedDisplay, 30000);
+document.addEventListener("DOMContentLoaded", () => {
+  initSyncUpdatesWebSocket();
+});
+
+setInterval(updateLastSyncedDisplay, 10000);
+setInterval(loadInboxStats, 60000);
 
 function handleSearchInput() {
   if (searchDebounceTimer) clearTimeout(searchDebounceTimer);

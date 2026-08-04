@@ -140,6 +140,8 @@ async def background_email_sync_loop():
 
             # Offload blocking IMAP network socket I/O to a worker thread so HTTP routes remain instant
             await asyncio.to_thread(_run_email_sync)
+            inbox.set_last_synced_at()
+            await inbox.notify_sync_completed_async()
 
             sync_trigger_event.clear()
             try:

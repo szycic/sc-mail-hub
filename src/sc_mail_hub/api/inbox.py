@@ -18,10 +18,111 @@ from sc_mail_hub.services.ai_service import AIService
 from sc_mail_hub.services.notion_service import NotionService
 
 from datetime import datetime, timezone
+from typing import Dict, List, Optional, Set
 
 router = APIRouter(prefix="/api/inbox", tags=["Inbox"])
 INGEST_JOB_QUEUES: Dict[str, asyncio.Queue] = {}
 LAST_SYNCED_AT: Optional[str] = None
+
+
+class SyncWebSocketManager:
+    def __init__(self):
+        self.active_connections: Set[WebSocket] = set()
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.add(websocket)
+
+    def disconnect(self, websocket: WebSocket):
+        self.active_connections.discard(websocket)
+
+    async def broadcast(self, message: dict):
+        disconnected = set()
+        for connection in list(self.active_connections):
+            try:
+                await connection.send_json(message)
+            except Exception:
+                disconnected.add(connection)
+        for conn in disconnected:
+            self.active_connections.discard(conn)
+
+
+sync_ws_manager = SyncWebSocketManager()
+
+
+def set_last_synced_at(dt_iso: Optional[str] = None) -> str:
+    global LAST_SYNCED_AT
+    if dt_iso is None:
+        dt_iso = datetime.now(timezone.utc).isoformat()
+    LAST_SYNCED_AT = dt_iso
+    return LAST_SYNCED_AT
+
+
+def compute_inbox_stats(db: Session) -> dict:
+    global LAST_SYNCED_AT
+    from sqlalchemy import func
+    counts_raw = db.query(TaskCandidate.status, func.count(TaskCandidate.id)).group_by(TaskCandidate.status).all()
+    status_counts = {status: count for status, count in counts_raw}
+
+    pending = status_counts.get("PENDING", 0)
+    ai_processed = status_counts.get("AI_PROCESSED", 0)
+    created = status_counts.get("CREATED", 0)
+    ignored = status_counts.get("IGNORED", 0)
+    total = sum(status_counts.values())
+
+    last_synced = LAST_SYNCED_AT
+
+    max_acc_synced = db.query(func.max(EmailAccount.last_synced_at)).scalar()
+    if max_acc_synced:
+        if max_acc_synced.tzinfo is None:
+            max_acc_synced = max_acc_synced.replace(tzinfo=timezone.utc)
+        max_acc_iso = max_acc_synced.isoformat()
+        if not last_synced or max_acc_iso > last_synced:
+            last_synced = max_acc_iso
+
+    if not last_synced:
+        latest_msg = db.query(EmailMessage).order_by(EmailMessage.received_at.desc()).first()
+        if latest_msg and latest_msg.received_at:
+            msg_dt = latest_msg.received_at
+            if msg_dt.tzinfo is None:
+                msg_dt = msg_dt.replace(tzinfo=timezone.utc)
+            last_synced = msg_dt.isoformat()
+
+    return {
+        "counts": {
+            "PENDING": pending,
+            "AI_PROCESSED": ai_processed,
+            "CREATED": created,
+            "IGNORED": ignored,
+            "ALL": total
+        },
+        "last_synced_at": last_synced
+    }
+
+
+async def notify_sync_completed_async():
+    set_last_synced_at()
+    db = SessionLocal()
+    try:
+        stats = compute_inbox_stats(db)
+        await sync_ws_manager.broadcast({
+            "event": "sync_completed",
+            "stats": stats["counts"],
+            "last_synced_at": stats["last_synced_at"]
+        })
+    except Exception:
+        pass
+    finally:
+        db.close()
+
+
+def notify_sync_completed():
+    set_last_synced_at()
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(notify_sync_completed_async())
+    except RuntimeError:
+        pass
 
 
 def _enqueue_ingest_event(loop: asyncio.AbstractEventLoop, job_id: str, event: dict) -> None:
@@ -34,7 +135,6 @@ def _enqueue_ingest_event(loop: asyncio.AbstractEventLoop, job_id: str, event: d
 
 
 def _run_sample_ingest_job(job_id: str, loop: asyncio.AbstractEventLoop) -> None:
-    global LAST_SYNCED_AT
     db = SessionLocal()
     try:
         accounts = db.query(EmailAccount).all()
@@ -73,7 +173,8 @@ def _run_sample_ingest_job(job_id: str, loop: asyncio.AbstractEventLoop) -> None
                         "candidates_seeded": total_candidates
                     })
 
-        LAST_SYNCED_AT = datetime.now(timezone.utc).isoformat()
+        set_last_synced_at()
+        notify_sync_completed()
 
         _enqueue_ingest_event(loop, job_id, {
             "status": "completed",
@@ -129,35 +230,31 @@ async def sample_ingest_progress_ws(websocket: WebSocket, job_id: str):
         INGEST_JOB_QUEUES.pop(job_id, None)
 
 
+@router.websocket("/ws/sync-updates")
+async def sync_updates_ws(websocket: WebSocket):
+    await sync_ws_manager.connect(websocket)
+    db = SessionLocal()
+    try:
+        stats = compute_inbox_stats(db)
+        await websocket.send_json({
+            "event": "initial_stats",
+            "stats": stats["counts"],
+            "last_synced_at": stats["last_synced_at"]
+        })
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+    finally:
+        db.close()
+        sync_ws_manager.disconnect(websocket)
+
+
 @router.get("/stats")
 def get_inbox_stats(db: Session = Depends(get_db)):
-    global LAST_SYNCED_AT
-    from sqlalchemy import func
-    counts_raw = db.query(TaskCandidate.status, func.count(TaskCandidate.id)).group_by(TaskCandidate.status).all()
-    status_counts = {status: count for status, count in counts_raw}
-
-    pending = status_counts.get("PENDING", 0)
-    ai_processed = status_counts.get("AI_PROCESSED", 0)
-    created = status_counts.get("CREATED", 0)
-    ignored = status_counts.get("IGNORED", 0)
-    total = sum(status_counts.values())
-
-    last_synced = LAST_SYNCED_AT
-    if not last_synced:
-        latest_msg = db.query(EmailMessage).order_by(EmailMessage.received_at.desc()).first()
-        if latest_msg and latest_msg.received_at:
-            last_synced = latest_msg.received_at.isoformat()
-
-    return {
-        "counts": {
-            "PENDING": pending,
-            "AI_PROCESSED": ai_processed,
-            "CREATED": created,
-            "IGNORED": ignored,
-            "ALL": total
-        },
-        "last_synced_at": last_synced
-    }
+    return compute_inbox_stats(db)
 
 
 @router.get("/candidates", response_model=PaginatedTaskCandidates)
