@@ -4,7 +4,7 @@
 
 let currentReviewRawEmailText = "";
 
-async function openTaskReviewModal(candidateId) {
+async function openTaskReviewModal(candidateId, allowFallback = false) {
   const card = document.getElementById(`candidate-card-${candidateId}`);
   if (card) card.style.opacity = "0.6";
 
@@ -22,9 +22,8 @@ async function openTaskReviewModal(candidateId) {
   showToast("Running AI extraction for task details...", "info");
 
   try {
-    const res = await fetch(`/api/inbox/candidates/${candidateId}/prepare-task`, {
-      method: "POST"
-    });
+    const url = `/api/inbox/candidates/${candidateId}/prepare-task${allowFallback ? '?allow_fallback=true' : ''}`;
+    const res = await fetch(url, { method: "POST" });
     const data = await res.json();
 
     if (res.ok) {
@@ -34,8 +33,16 @@ async function openTaskReviewModal(candidateId) {
       if (modal) modal.classList.add("active");
       if (card) card.style.opacity = "1";
     } else {
-      showToast(data.detail || "Failed to prepare task", "error");
       if (card) card.style.opacity = "1";
+      if (!allowFallback && data.detail && (data.detail.includes("AI Provider") || data.detail.includes("OpenAI") || data.detail.includes("Gemini") || data.detail.includes("Groq"))) {
+        if (typeof handleAiProviderError === "function") {
+          handleAiProviderError(data.detail, () => openTaskReviewModal(candidateId, true));
+        } else {
+          showToast(data.detail, "error");
+        }
+      } else {
+        showToast(data.detail || "Failed to prepare task", "error");
+      }
     }
   } catch (err) {
     showToast(`Error: ${err.message}`, "error");
@@ -262,7 +269,7 @@ async function submitReviewedTaskToNotion() {
     if (res.ok && data.notion_url) {
       closeTaskReviewModal();
       showToast("Task successfully created in Notion!", "success");
-      loadCandidates(currentStatusFilter);
+      loadCandidates();
     } else {
       showToast(data.detail || "Failed to create task in Notion", "error");
     }

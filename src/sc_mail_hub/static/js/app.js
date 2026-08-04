@@ -5,13 +5,10 @@
 
 document.addEventListener("DOMContentLoaded", async () => {
   initTabs();
+  initInboxStateFromUrl();
   await loadAccounts();
   loadCandidates();
   await loadNotionConfig();
   loadAISettings();
-
-  // Auto-refresh inbox candidates every 30 seconds
-  setInterval(() => {
-    loadCandidates();
-  }, 30000);
+  await loadAdminSettings();
 });

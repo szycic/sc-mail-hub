@@ -9,10 +9,228 @@ let pageSize = 10;
 let totalCandidates = 0;
 let totalPages = 1;
 
+let lastSyncedIso = null;
+let searchDebounceTimer = null;
+let selectedCandidateIds = new Set();
+
+function initInboxStateFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  const statusParam = params.get("status");
+  const pageParam = params.get("page");
+  const pageSizeParam = params.get("page_size");
+  const searchParam = params.get("search");
+
+  if (statusParam) {
+    const validStatuses = ["PENDING", "AI_PROCESSED", "CREATED", "IGNORED", "ALL"];
+    if (validStatuses.includes(statusParam.toUpperCase())) {
+      currentStatusFilter = statusParam.toUpperCase();
+      document.querySelectorAll(".inbox-filter-btn").forEach(b => b.classList.remove("active"));
+      const btn = document.getElementById(`filter-btn-${currentStatusFilter}`);
+      if (btn) btn.classList.add("active");
+    }
+  }
+
+  if (pageParam) {
+    const p = parseInt(pageParam, 10);
+    if (!isNaN(p) && p >= 1) {
+      currentPage = p;
+    }
+  }
+
+  if (pageSizeParam) {
+    const ps = parseInt(pageSizeParam, 10);
+    if (!isNaN(ps) && ps >= 1) {
+      pageSize = ps;
+    }
+  }
+
+  if (searchParam) {
+    const searchInput = document.getElementById("filter-search");
+    if (searchInput) {
+      searchInput.value = searchParam;
+    }
+  }
+}
+
+function updateUrlParams() {
+  const url = new URL(window.location);
+
+  if (currentStatusFilter && currentStatusFilter !== "PENDING") {
+    url.searchParams.set("status", currentStatusFilter);
+  } else {
+    url.searchParams.delete("status");
+  }
+
+  if (currentPage && currentPage > 1) {
+    url.searchParams.set("page", currentPage);
+  } else {
+    url.searchParams.delete("page");
+  }
+
+  if (pageSize && pageSize !== 10) {
+    url.searchParams.set("page_size", pageSize);
+  } else {
+    url.searchParams.delete("page_size");
+  }
+
+  const searchVal = document.getElementById("filter-search")?.value?.trim();
+  if (searchVal) {
+    url.searchParams.set("search", searchVal);
+  } else {
+    url.searchParams.delete("search");
+  }
+
+  const newUrl = url.pathname + url.search + url.hash;
+  if (window.location.pathname + window.location.search + window.location.hash !== newUrl) {
+    history.replaceState(null, "", newUrl);
+  }
+}
+
+function toggleCandidateSelection(candidateId, isChecked) {
+  if (isChecked) {
+    selectedCandidateIds.add(candidateId);
+  } else {
+    selectedCandidateIds.delete(candidateId);
+  }
+  updateBulkActionUI();
+}
+
+function toggleSelectAllCandidates(isChecked) {
+  const visibleCbs = document.querySelectorAll(".candidate-select-cb");
+  visibleCbs.forEach(cb => {
+    cb.checked = isChecked;
+    const id = parseInt(cb.getAttribute("data-id"), 10);
+    if (id) {
+      if (isChecked) selectedCandidateIds.add(id);
+      else selectedCandidateIds.delete(id);
+    }
+  });
+  updateBulkActionUI();
+}
+
+function updateBulkActionUI() {
+  const bulkBar = document.getElementById("bulk-action-bar");
+  if (currentStatusFilter === "ALL") {
+    if (bulkBar) bulkBar.style.display = "none";
+    return;
+  }
+  if (bulkBar) bulkBar.style.display = "flex";
+
+  const count = selectedCandidateIds.size;
+  const countEl = document.getElementById("bulk-selected-count");
+  if (countEl) {
+    countEl.textContent = `(${count} selected)`;
+  }
+
+  const btnProcess = document.getElementById("btn-bulk-process");
+  const btnReprocess = document.getElementById("btn-bulk-reprocess");
+  const btnNotion = document.getElementById("btn-bulk-notion");
+  const btnIgnore = document.getElementById("btn-bulk-ignore");
+  const btnUnignore = document.getElementById("btn-bulk-unignore");
+
+  if (btnProcess) {
+    const showProcess = currentStatusFilter === "PENDING";
+    btnProcess.style.display = showProcess ? "inline-flex" : "none";
+    btnProcess.disabled = count === 0;
+  }
+
+  if (btnReprocess) {
+    const showReprocess = currentStatusFilter === "AI_PROCESSED";
+    btnReprocess.style.display = showReprocess ? "inline-flex" : "none";
+    btnReprocess.disabled = count === 0;
+  }
+
+  if (btnNotion) {
+    const showNotion = currentStatusFilter === "CREATED";
+    btnNotion.style.display = showNotion ? "inline-flex" : "none";
+    btnNotion.disabled = count === 0;
+  }
+
+  if (btnIgnore) {
+    const showIgnore = currentStatusFilter === "PENDING" || currentStatusFilter === "AI_PROCESSED";
+    btnIgnore.style.display = showIgnore ? "inline-flex" : "none";
+    btnIgnore.disabled = count === 0;
+  }
+
+  if (btnUnignore) {
+    const showUnignore = currentStatusFilter === "IGNORED";
+    btnUnignore.style.display = showUnignore ? "inline-flex" : "none";
+    btnUnignore.disabled = count === 0;
+  }
+
+  const selectAllCb = document.getElementById("select-all-cb");
+  const visibleCbs = document.querySelectorAll(".candidate-select-cb");
+  if (selectAllCb && visibleCbs.length > 0) {
+    selectAllCb.checked = Array.from(visibleCbs).every(cb => cb.checked);
+  } else if (selectAllCb) {
+    selectAllCb.checked = false;
+  }
+}
+
+async function loadInboxStats() {
+  try {
+    const res = await fetch("/api/inbox/stats");
+    if (!res.ok) return;
+    const data = await res.json();
+    const counts = data.counts || {};
+
+    ["PENDING", "AI_PROCESSED", "CREATED", "IGNORED", "ALL"].forEach(st => {
+      const badgeEl = document.getElementById(`badge-${st}`);
+      if (badgeEl) {
+        badgeEl.textContent = counts[st] !== undefined ? counts[st] : 0;
+      }
+    });
+
+    if (data.last_synced_at) {
+      lastSyncedIso = data.last_synced_at;
+      updateLastSyncedDisplay();
+    }
+  } catch (err) {
+    console.error("Failed to load inbox stats:", err);
+  }
+}
+
+function updateLastSyncedDisplay() {
+  const el = document.getElementById("last-synced-indicator");
+  if (!el) return;
+  if (!lastSyncedIso) {
+    el.textContent = "Last synced: Never";
+    return;
+  }
+  const syncDate = new Date(lastSyncedIso);
+  const now = new Date();
+  const diffSec = Math.floor((now - syncDate) / 1000);
+
+  let label = "Just now";
+  if (diffSec >= 60 && diffSec < 3600) {
+    const mins = Math.floor(diffSec / 60);
+    label = `${mins} min${mins > 1 ? 's' : ''} ago`;
+  } else if (diffSec >= 3600 && diffSec < 86400) {
+    const hrs = Math.floor(diffSec / 3600);
+    label = `${hrs} hr${hrs > 1 ? 's' : ''} ago`;
+  } else if (diffSec >= 86400) {
+    const days = Math.floor(diffSec / 86400);
+    label = `${days} day${days > 1 ? 's' : ''} ago`;
+  }
+  el.textContent = `Last synced: ${label}`;
+}
+
+setInterval(updateLastSyncedDisplay, 30000);
+
+function handleSearchInput() {
+  if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+  searchDebounceTimer = setTimeout(() => {
+    currentPage = 1;
+    loadCandidates();
+  }, 300);
+}
+
 async function loadCandidates(statusFilter, page) {
-  if (statusFilter) {
+  if (statusFilter && statusFilter !== currentStatusFilter) {
     currentStatusFilter = statusFilter;
     currentPage = 1;
+  } else if (statusFilter) {
+    currentStatusFilter = statusFilter;
   }
   if (page !== undefined && page !== null) {
     currentPage = page;
@@ -25,8 +243,17 @@ async function loadCandidates(statusFilter, page) {
   const accountFilter = document.getElementById("filter-account")?.value || "ALL";
   const recipientTypeFilter = document.getElementById("filter-recipient-type")?.value || "ALL";
   const sortBy = document.getElementById("sort-candidates")?.value || "NEWEST";
+  const searchVal = document.getElementById("filter-search")?.value?.trim() || "";
 
-  listEl.innerHTML = `<div class="empty-state"><div class="empty-icon">⏳</div>Loading task candidates...</div>`;
+  const savedScrollY = window.scrollY;
+  const isInitialLoad = !listEl.children.length || listEl.querySelector(".empty-state");
+
+  if (isInitialLoad) {
+    listEl.innerHTML = `<div class="empty-state"><div class="empty-icon">⏳</div>Loading task candidates...</div>`;
+  } else {
+    listEl.style.opacity = "0.65";
+    listEl.style.pointerEvents = "none";
+  }
 
   try {
     const params = new URLSearchParams();
@@ -41,6 +268,9 @@ async function loadCandidates(statusFilter, page) {
     }
     if (sortBy) {
       params.append("sort_by", sortBy);
+    }
+    if (searchVal) {
+      params.append("search", searchVal);
     }
     params.append("page", currentPage);
     params.append("page_size", pageSize);
@@ -59,14 +289,25 @@ async function loadCandidates(statusFilter, page) {
       currentCandidates = data.items || [];
       totalCandidates = data.total || 0;
       totalPages = data.total_pages || 1;
-      currentPage = data.page || 1;
+      if (data.total_pages > 0 && currentPage > data.total_pages) {
+        return loadCandidates(null, data.total_pages);
+      }
     }
 
     renderCandidates(currentCandidates);
     renderPagination();
+    loadInboxStats();
+    updateUrlParams();
+
+    if (!isInitialLoad) {
+      window.scrollTo({ top: savedScrollY });
+    }
   } catch (err) {
     if (listEl) listEl.innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div>Error loading candidates: ${err.message}</div>`;
     if (pagEl) pagEl.innerHTML = "";
+  } finally {
+    listEl.style.opacity = "1";
+    listEl.style.pointerEvents = "auto";
   }
 }
 
@@ -85,6 +326,7 @@ function renderCandidates(candidates) {
         </button>
       </div>
     `;
+    updateBulkActionUI();
     return;
   }
 
@@ -99,15 +341,21 @@ function renderCandidates(candidates) {
     return `
       <div class="candidate-card" id="candidate-card-${c.id}">
         <div class="candidate-header">
-          <div>
-            <div style="display:flex; align-items:center; gap:8px; margin-bottom: 6px; flex-wrap:wrap;">
-              ${c.recipient_type === "DIRECT" ? `<span class="type-pill" style="background:rgba(16,185,129,0.15); color:#6ee7b7; border:1px solid rgba(16,185,129,0.3); font-weight:600; font-size:11px; padding:3px 8px; border-radius:4px;">👤 Direct Email</span>` : ''}
-              ${c.recipient_type === "MAILING_GROUP" ? `<span class="type-pill" style="background:rgba(168,85,247,0.15); color:#c084fc; border:1px solid rgba(168,85,247,0.3); font-weight:600; font-size:11px; padding:3px 8px; border-radius:4px;">👥 Mailing Group</span>` : ''}
-              ${(isCreated || isAiProcessed) && c.priority ? `<span class="importance-badge ${c.priority}">${escapeHtml(c.priority)}</span>` : ''}
-              ${startDateFmt ? `<span class="meta-item" style="color:#6ee7b7;">🚀 <strong>Start: ${escapeHtml(startDateFmt)}</strong></span>` : ''}
-              ${deadlineFmt ? `<span class="meta-item" style="color:#fde047;">📅 <strong>Due: ${escapeHtml(deadlineFmt)}</strong></span>` : ''}
+          <div style="display:flex; align-items:flex-start; gap:10px;">
+            ${currentStatusFilter !== "ALL" ? `
+              <input type="checkbox" class="candidate-select-cb" data-id="${c.id}" style="margin-top:4px; cursor:pointer; width:15px; height:15px; accent-color:var(--accent-gradient);"
+                ${selectedCandidateIds.has(c.id) ? 'checked' : ''} onchange="toggleCandidateSelection(${c.id}, this.checked)">
+            ` : ''}
+            <div>
+              <div style="display:flex; align-items:center; gap:8px; margin-bottom: 6px; flex-wrap:wrap;">
+                ${c.recipient_type === "DIRECT" ? `<span class="type-pill" style="background:rgba(16,185,129,0.15); color:#6ee7b7; border:1px solid rgba(16,185,129,0.3); font-weight:600; font-size:11px; padding:3px 8px; border-radius:4px;">👤 Direct Email</span>` : ''}
+                ${c.recipient_type === "MAILING_GROUP" ? `<span class="type-pill" style="background:rgba(168,85,247,0.15); color:#c084fc; border:1px solid rgba(168,85,247,0.3); font-weight:600; font-size:11px; padding:3px 8px; border-radius:4px;">👥 Mailing Group</span>` : ''}
+                ${(isCreated || isAiProcessed) && c.priority ? `<span class="importance-badge ${c.priority}">${escapeHtml(c.priority)}</span>` : ''}
+                ${startDateFmt ? `<span class="meta-item" style="color:#6ee7b7;">🚀 <strong>Start: ${escapeHtml(startDateFmt)}</strong></span>` : ''}
+                ${deadlineFmt ? `<span class="meta-item" style="color:#fde047;">📅 <strong>Due: ${escapeHtml(deadlineFmt)}</strong></span>` : ''}
+              </div>
+              <h3 class="candidate-title">${escapeHtml(c.title)}</h3>
             </div>
-            <h3 class="candidate-title">${escapeHtml(c.title)}</h3>
           </div>
           <div>
             ${isCreated ? `<span class="btn btn-sm btn-outline" style="color:#10b981; border-color:#10b981;">✓ Synced to Notion</span>` : ''}
@@ -127,8 +375,11 @@ function renderCandidates(candidates) {
 
         <div class="candidate-actions">
           ${!isCreated && !isIgnored && !isAiProcessed ? `
-            <button class="btn btn-primary btn-sm" onclick="openTaskReviewModal(${c.id})">
-              ✨ Run AI & Review
+            <button class="btn btn-primary btn-sm" onclick="processCandidateWithAi(${c.id})">
+              🤖 Process
+            </button>
+            <button class="btn btn-outline btn-sm" style="color:#a5b4fc; border-color:rgba(99,102,241,0.4);" onclick="openTaskReviewModal(${c.id})">
+              ✨ Process & Review
             </button>
             <button class="btn btn-outline btn-sm" onclick="ignoreCandidate(${c.id})">
               🚫 Ignore
@@ -137,7 +388,10 @@ function renderCandidates(candidates) {
 
           ${isAiProcessed ? `
             <button class="btn btn-primary btn-sm" onclick="openTaskReviewModal(${c.id})">
-              ✏️ Edit & Add to Notion
+              ✏️ Review
+            </button>
+            <button class="btn btn-outline btn-sm" onclick="reprocessCandidateWithAi(${c.id})">
+              🔄 Reprocess
             </button>
             <button class="btn btn-outline btn-sm" onclick="ignoreCandidate(${c.id})">
               🚫 Ignore
@@ -152,7 +406,7 @@ function renderCandidates(candidates) {
 
           ${c.notion_url ? `
             <a href="${c.notion_url}" target="_blank" class="btn btn-success btn-sm">
-              🔗 View in Notion
+              🔗 Open in Notion
             </a>
           ` : ''}
 
@@ -163,6 +417,150 @@ function renderCandidates(candidates) {
       </div>
     `;
   }).join("");
+
+  updateBulkActionUI();
+}
+
+function handleAiProviderError(detail, onFallbackConfirm) {
+  const choice = confirm(
+    `AI Provider Error:\n${detail}\n\n` +
+    `• Click OK to fall back to heuristic extraction.\n` +
+    `• Click Cancel to abort operation.`
+  );
+
+  if (choice) {
+    onFallbackConfirm();
+  }
+}
+
+async function bulkProcessCandidates(allowFallback = false) {
+  if (selectedCandidateIds.size === 0) return;
+  const ids = Array.from(selectedCandidateIds);
+  const loadingToast = showToast(`Processing ${ids.length} candidate(s) with AI...`, "loading", true);
+
+  try {
+    const url = `/api/inbox/candidates/batch-process${allowFallback ? '?allow_fallback=true' : ''}`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ candidate_ids: ids })
+    });
+    const data = await res.json();
+    if (loadingToast) loadingToast.dismiss();
+
+    if (res.ok) {
+      showToast(data.message || `Processed ${ids.length} candidate(s)`, "success");
+      selectedCandidateIds.clear();
+      updateBulkActionUI();
+      loadCandidates();
+    } else {
+      if (!allowFallback && data.detail && (data.detail.includes("AI Provider") || data.detail.includes("OpenAI") || data.detail.includes("Gemini") || data.detail.includes("Groq"))) {
+        handleAiProviderError(data.detail, () => bulkProcessCandidates(true));
+      } else {
+        showToast(data.detail || "Failed batch processing", "error");
+      }
+    }
+  } catch (err) {
+    if (loadingToast) loadingToast.dismiss();
+    showToast(`Error: ${err.message}`, "error");
+  }
+}
+
+async function bulkReprocessCandidates(allowFallback = false) {
+  if (selectedCandidateIds.size === 0) return;
+  const ids = Array.from(selectedCandidateIds);
+  const loadingToast = showToast(`Re-running AI extraction for ${ids.length} candidate(s)...`, "loading", true);
+
+  try {
+    const url = `/api/inbox/candidates/batch-reprocess${allowFallback ? '?allow_fallback=true' : ''}`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ candidate_ids: ids })
+    });
+    const data = await res.json();
+    if (loadingToast) loadingToast.dismiss();
+
+    if (res.ok) {
+      showToast(data.message || `Reprocessed ${ids.length} candidate(s)`, "info");
+      selectedCandidateIds.clear();
+      updateBulkActionUI();
+      loadCandidates();
+    } else {
+      if (!allowFallback && data.detail && (data.detail.includes("AI Provider") || data.detail.includes("OpenAI") || data.detail.includes("Gemini") || data.detail.includes("Groq"))) {
+        handleAiProviderError(data.detail, () => bulkReprocessCandidates(true));
+      } else {
+        showToast(data.detail || "Failed batch reprocess", "error");
+      }
+    }
+  } catch (err) {
+    if (loadingToast) loadingToast.dismiss();
+    showToast(`Error: ${err.message}`, "error");
+  }
+}
+
+async function bulkIgnoreCandidates() {
+  if (selectedCandidateIds.size === 0) return;
+  const ids = Array.from(selectedCandidateIds);
+  try {
+    const res = await fetch("/api/inbox/candidates/batch-ignore", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ candidate_ids: ids })
+    });
+    const data = await res.json();
+    if (res.ok) {
+      showToast(data.message || `Ignored ${ids.length} candidate(s)`, "info");
+      selectedCandidateIds.clear();
+      updateBulkActionUI();
+      loadCandidates();
+    } else {
+      showToast(data.detail || "Failed batch ignore", "error");
+    }
+  } catch (err) {
+    showToast(`Error: ${err.message}`, "error");
+  }
+}
+
+async function bulkUnignoreCandidates() {
+  if (selectedCandidateIds.size === 0) return;
+  const ids = Array.from(selectedCandidateIds);
+  try {
+    const res = await fetch("/api/inbox/candidates/batch-unignore", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ candidate_ids: ids })
+    });
+    const data = await res.json();
+    if (res.ok) {
+      showToast(data.message || `Restored ${ids.length} candidate(s)`, "info");
+      selectedCandidateIds.clear();
+      updateBulkActionUI();
+      loadCandidates();
+    } else {
+      showToast(data.detail || "Failed batch unignore", "error");
+    }
+  } catch (err) {
+    showToast(`Error: ${err.message}`, "error");
+  }
+}
+
+function bulkOpenNotionTasks() {
+  if (selectedCandidateIds.size === 0) return;
+  let openedCount = 0;
+
+  currentCandidates.forEach(c => {
+    if (selectedCandidateIds.has(c.id) && c.notion_url) {
+      window.open(c.notion_url, "_blank");
+      openedCount++;
+    }
+  });
+
+  if (openedCount > 0) {
+    showToast(`Opened ${openedCount} Notion task(s)`, "info");
+  } else {
+    showToast("No Notion links available for selected candidates", "warning");
+  }
 }
 
 async function ignoreCandidate(candidateId) {
@@ -172,9 +570,71 @@ async function ignoreCandidate(candidateId) {
     });
     if (res.ok) {
       showToast("Task candidate ignored", "info");
-      loadCandidates(currentStatusFilter);
+      loadCandidates();
     }
   } catch (err) {
+    showToast(`Error: ${err.message}`, "error");
+  }
+}
+
+async function processCandidateWithAi(candidateId, allowFallback = false) {
+  const card = document.getElementById(`candidate-card-${candidateId}`);
+  if (card) card.style.opacity = "0.6";
+
+  const loadingToast = showToast("Running AI extraction for task details...", "loading", true);
+
+  try {
+    const url = `/api/inbox/candidates/${candidateId}/prepare-task${allowFallback ? '?allow_fallback=true' : ''}`;
+    const res = await fetch(url, { method: "POST" });
+    const data = await res.json();
+
+    if (loadingToast) loadingToast.dismiss();
+
+    if (res.ok) {
+      showToast("Candidate processed with AI!", "success");
+      loadCandidates();
+    } else {
+      if (card) card.style.opacity = "1";
+      if (!allowFallback && data.detail && (data.detail.includes("AI Provider") || data.detail.includes("OpenAI") || data.detail.includes("Gemini") || data.detail.includes("Groq"))) {
+        handleAiProviderError(data.detail, () => processCandidateWithAi(candidateId, true));
+      } else {
+        showToast(data.detail || "Failed to process candidate", "error");
+      }
+    }
+  } catch (err) {
+    if (loadingToast) loadingToast.dismiss();
+    if (card) card.style.opacity = "1";
+    showToast(`Error: ${err.message}`, "error");
+  }
+}
+
+async function reprocessCandidateWithAi(candidateId, allowFallback = false) {
+  const card = document.getElementById(`candidate-card-${candidateId}`);
+  if (card) card.style.opacity = "0.6";
+
+  const loadingToast = showToast("Re-running AI extraction for task details...", "loading", true);
+
+  try {
+    const url = `/api/inbox/candidates/${candidateId}/prepare-task?force=true${allowFallback ? '&allow_fallback=true' : ''}`;
+    const res = await fetch(url, { method: "POST" });
+    const data = await res.json();
+
+    if (loadingToast) loadingToast.dismiss();
+
+    if (res.ok) {
+      showToast("Candidate reprocessed with AI!", "success");
+      loadCandidates();
+    } else {
+      if (card) card.style.opacity = "1";
+      if (!allowFallback && data.detail && (data.detail.includes("AI Provider") || data.detail.includes("OpenAI") || data.detail.includes("Gemini") || data.detail.includes("Groq"))) {
+        handleAiProviderError(data.detail, () => reprocessCandidateWithAi(candidateId, true));
+      } else {
+        showToast(data.detail || "Failed to reprocess candidate", "error");
+      }
+    }
+  } catch (err) {
+    if (loadingToast) loadingToast.dismiss();
+    if (card) card.style.opacity = "1";
     showToast(`Error: ${err.message}`, "error");
   }
 }
@@ -187,7 +647,7 @@ async function unignoreCandidate(candidateId) {
     const data = await res.json();
     if (res.ok) {
       showToast(data.message || "Task candidate restored", "info");
-      loadCandidates(currentStatusFilter);
+      loadCandidates();
     } else {
       showToast(data.detail || "Failed to restore candidate", "error");
     }
@@ -204,7 +664,7 @@ async function deleteMessage(candidateId) {
     });
     if (res.ok) {
       showToast("Message deleted", "info");
-      loadCandidates(currentStatusFilter);
+      loadCandidates();
     }
   } catch (err) {
     showToast(`Error: ${err.message}`, "error");
@@ -297,6 +757,9 @@ async function emptyInbox() {
 }
 
 function filterInbox(status) {
+  selectedCandidateIds.clear();
+  currentStatusFilter = status;
+  updateBulkActionUI();
   document.querySelectorAll(".inbox-filter-btn").forEach(b => b.classList.remove("active"));
   const btn = document.getElementById(`filter-btn-${status}`);
   if (btn) btn.classList.add("active");

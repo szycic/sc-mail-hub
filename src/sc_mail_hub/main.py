@@ -6,6 +6,8 @@ lifespan background email polling loop, and initial default configuration.
 
 import os
 import asyncio
+import logging
+from datetime import datetime, timezone, timedelta
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import RedirectResponse
@@ -15,16 +17,17 @@ from sqlalchemy.orm import Session
 
 from sc_mail_hub.config import settings
 from sc_mail_hub.database import engine, Base, init_db, SessionLocal
-from sc_mail_hub.models import NotionConfig, NotionFieldMapping, AISettings, EmailAccount
+from sc_mail_hub.models import NotionConfig, NotionFieldMapping, AISettings, EmailAccount, SystemSettings, TaskCandidate, EmailMessage
 from sc_mail_hub.services.email_service import EmailService
 from sc_mail_hub.services.ai_service import AIService
-from sc_mail_hub.api import inbox, accounts, notion, ai
+from sc_mail_hub.api import inbox, accounts, notion, ai, admin
 
+logger = logging.getLogger("sc_mail_hub.main")
 init_db()
 
 
 def setup_defaults(db: Session):
-    """Seed initial default configurations for Notion and AI settings if absent."""
+    """Seed initial default configurations for Notion, AI, and System settings if absent."""
     notion_cfg = db.query(NotionConfig).first()
     if not notion_cfg:
         notion_cfg = NotionConfig(
@@ -42,41 +45,123 @@ def setup_defaults(db: Session):
             model_name=""
         ))
         
+    sys_set = db.query(SystemSettings).first()
+    if not sys_set:
+        db.add(SystemSettings(
+            imap_sync_enabled=True,
+            imap_sync_interval_seconds=300,
+            ui_auto_refresh_enabled=True,
+            ui_auto_refresh_interval_seconds=30
+        ))
+
     db.commit()
 
 
-_db = SessionLocal()
-try:
-    setup_defaults(_db)
-finally:
-    _db.close()
+def purge_expired_candidates(db: Session):
+    """Purge candidates synced to Notion or Ignored (and raw email records) older than configured retention days."""
+    try:
+        sys_set = db.query(SystemSettings).first()
+        if not sys_set:
+            return
+
+        now = datetime.now(timezone.utc)
+
+        def purge_status_items(status_code: str, retention_days: int):
+            cutoff = now - timedelta(days=retention_days)
+            expired_candidates = db.query(TaskCandidate).filter(
+                TaskCandidate.status == status_code,
+                TaskCandidate.updated_at <= cutoff
+            ).all()
+
+            for cand in expired_candidates:
+                EmailService.purge_pdf_files(email_id=cand.email_id, candidate_id=cand.id)
+                if cand.email_id:
+                    email_msg = db.query(EmailMessage).filter(EmailMessage.id == cand.email_id).first()
+                    if email_msg:
+                        db.delete(email_msg)
+                db.delete(cand)
+
+        if sys_set.auto_purge_synced_enabled and sys_set.purge_synced_days > 0:
+            purge_status_items("CREATED", sys_set.purge_synced_days)
+
+        if sys_set.auto_purge_ignored_enabled and sys_set.purge_ignored_days > 0:
+            purge_status_items("IGNORED", sys_set.purge_ignored_days)
+
+        db.commit()
+    except Exception as err:
+        logger.error(f"Auto-purge execution error: {err}")
+
+
+sync_trigger_event = asyncio.Event()
+
+
+def trigger_immediate_email_sync():
+    """Signal background email sync loop to wake up immediately and apply new settings."""
+    try:
+        loop = asyncio.get_running_loop()
+        loop.call_soon_threadsafe(sync_trigger_event.set)
+    except RuntimeError:
+        sync_trigger_event.set()
+
+
+def _run_email_sync():
+    """Synchronous worker thread function to fetch IMAP emails without blocking main asyncio event loop."""
+    db = SessionLocal()
+    try:
+        sys_set = db.query(SystemSettings).first()
+        if not sys_set or not sys_set.imap_sync_enabled:
+            return
+
+        accs = db.query(EmailAccount).all()
+        for acc in accs:
+            msgs = EmailService.fetch_from_imap(acc, db)
+            for msg in msgs:
+                AIService.ensure_candidate_from_email(msg, db)
+    except Exception as err:
+        logger.error(f"Background email sync error: {err}")
+    finally:
+        db.close()
 
 
 async def background_email_sync_loop():
-    """Background task running every 5 minutes to fetch emails automatically."""
+    """Background email polling task dynamically configured via SystemSettings DB table."""
     while True:
         try:
-            await asyncio.sleep(settings.POLL_INTERVAL_SECONDS)
+            poll_seconds = 300
+
             db = SessionLocal()
             try:
-                accs = db.query(EmailAccount).all()
-                for acc in accs:
-                    msgs = EmailService.fetch_from_imap(acc, db)
-                    for msg in msgs:
-                        AIService.ensure_candidate_from_email(msg, db)
-            except Exception as err:
-                print(f"Background email sync error: {err}")
+                sys_set = db.query(SystemSettings).first()
+                if sys_set:
+                    poll_seconds = sys_set.imap_sync_interval_seconds
+                purge_expired_candidates(db)
             finally:
                 db.close()
+
+            # Offload blocking IMAP network socket I/O to a worker thread so HTTP routes remain instant
+            await asyncio.to_thread(_run_email_sync)
+
+            sync_trigger_event.clear()
+            try:
+                await asyncio.wait_for(sync_trigger_event.wait(), timeout=max(poll_seconds, 5))
+            except asyncio.TimeoutError:
+                pass
         except asyncio.CancelledError:
             break
         except Exception as e:
-            print(f"Background loop error: {e}")
+            logger.error(f"Background loop error: {e}")
+            await asyncio.sleep(10)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage application background task lifecycle on startup and shutdown."""
+    db = SessionLocal()
+    try:
+        setup_defaults(db)
+    finally:
+        db.close()
+
     sync_task = asyncio.create_task(background_email_sync_loop())
     yield
     sync_task.cancel()
@@ -102,6 +187,7 @@ app.include_router(inbox.router)
 app.include_router(accounts.router)
 app.include_router(notion.router)
 app.include_router(ai.router)
+app.include_router(admin.router)
 
 
 @app.get("/")

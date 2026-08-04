@@ -50,6 +50,11 @@ class TaskCandidateOut(TaskCandidateBase):
     model_config = ConfigDict(from_attributes=True)
 
 
+class BatchCandidatesRequest(BaseModel):
+    """Payload for batch operations on candidate IDs."""
+    candidate_ids: List[int]
+
+
 class PaginatedTaskCandidates(BaseModel):
     """Response payload representing paginated task candidate cards."""
     items: List[TaskCandidateOut]
@@ -135,3 +140,31 @@ class AISettingsOut(BaseModel):
     api_key_configured: bool
     model_name: str
     custom_prompt: Optional[str] = None
+
+
+# --- System & Admin Settings Schemas ---
+class SystemSettingsOut(BaseModel):
+    """Response payload for administrative system configuration."""
+    id: int
+    imap_sync_enabled: bool
+    imap_sync_interval_seconds: int
+    ui_auto_refresh_enabled: bool
+    ui_auto_refresh_interval_seconds: int
+    auto_purge_synced_enabled: bool
+    purge_synced_days: int
+    auto_purge_ignored_enabled: bool
+    purge_ignored_days: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class SystemSettingsUpdate(BaseModel):
+    """Request payload for updating administrative system configuration."""
+    imap_sync_enabled: Optional[bool] = None
+    imap_sync_interval_seconds: Optional[int] = Field(None, ge=5, le=86400)
+    ui_auto_refresh_enabled: Optional[bool] = None
+    ui_auto_refresh_interval_seconds: Optional[int] = Field(None, ge=5, le=86400)
+    auto_purge_synced_enabled: Optional[bool] = None
+    purge_synced_days: Optional[int] = Field(None, ge=1, le=365)
+    auto_purge_ignored_enabled: Optional[bool] = None
+    purge_ignored_days: Optional[int] = Field(None, ge=1, le=365)

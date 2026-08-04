@@ -1,11 +1,14 @@
 import httpx
 import json
 import re
+import logging
+from pathlib import Path
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 from sqlalchemy.orm import Session
 from sc_mail_hub.models import TaskCandidate, EmailMessage, NotionConfig, NotionFieldMapping
 
+logger = logging.getLogger(__name__)
 NOTION_API_VERSION = "2022-06-28"
 
 def extract_notion_id(val: str) -> str:
@@ -19,6 +22,57 @@ def extract_notion_id(val: str) -> str:
     return val_clean.replace("-", "").strip().lower()
 
 class NotionService:
+    @staticmethod
+    def upload_file(client: httpx.Client, api_token: str, file_path: Path, filename: str) -> Optional[str]:
+        """
+        Upload a local file to Notion file server using 2-step Notion file upload API:
+        1. POST /v1/file_uploads with {"mode": "single_part", "filename": filename}
+        2. POST /v1/file_uploads/{id}/send with multipart/form-data
+        Returns the file_upload_id if successful, or None if failed.
+        """
+        if not file_path or not file_path.exists():
+            logger.warning(f"File does not exist for Notion upload: {file_path}")
+            return None
+
+        headers = {
+            "Authorization": f"Bearer {api_token.strip()}",
+            "Notion-Version": NOTION_API_VERSION,
+        }
+
+        # Step 1: Create Notion upload
+        create_url = "https://api.notion.com/v1/file_uploads"
+        try:
+            init_res = client.post(
+                create_url,
+                headers={**headers, "Content-Type": "application/json"},
+                json={"mode": "single_part", "filename": filename}
+            )
+            if init_res.status_code not in (200, 201):
+                logger.error(f"Failed to create Notion file upload ({init_res.status_code}): {init_res.text}")
+                return None
+
+            init_data = init_res.json()
+            upload_id = init_data.get("id")
+            if not upload_id:
+                logger.error(f"Notion file upload creation returned no ID: {init_data}")
+                return None
+
+            # Step 2: Send file content via multipart/form-data
+            send_url = init_data.get("upload_url") or f"https://api.notion.com/v1/file_uploads/{upload_id}/send"
+            with open(file_path, "rb") as f:
+                files = {"file": (filename, f, "application/pdf")}
+                send_res = client.post(send_url, headers=headers, files=files)
+
+            if send_res.status_code not in (200, 201):
+                logger.error(f"Failed to send file content to Notion ({send_res.status_code}): {send_res.text}")
+                return None
+
+            logger.info(f"Successfully uploaded file '{filename}' to Notion with file_upload_id: {upload_id}")
+            return upload_id
+        except Exception as err:
+            logger.error(f"Exception during Notion file upload: {err}")
+            return None
+
     @staticmethod
     def get_headers(api_token: str) -> Dict[str, str]:
         return {
@@ -139,10 +193,14 @@ class NotionService:
 
         # Generate email PDF copy for attachment mapping
         pdf_attachment_url = ""
+        pdf_path = None
+        pdf_filename = f"Email_{email_msg.id}.pdf" if email_msg else f"Task_{candidate.id}.pdf"
+
         if email_msg:
             from sc_mail_hub.services.email_service import EmailService
             from sc_mail_hub.config import settings
             pdf_rel = EmailService.generate_email_pdf(email_msg)
+            pdf_path = EmailService.get_pdf_dir() / f"email_{email_msg.id}.pdf"
             base_url = (settings.BASE_URL or "http://localhost:8001").rstrip("/")
             pdf_attachment_url = f"{base_url}{pdf_rel}"
 
@@ -161,89 +219,103 @@ class NotionService:
             "attachment": pdf_attachment_url
         }
 
-        notion_properties = {}
-
-        for mapping in mappings:
-            if not mapping.notion_property_name or mapping.notion_property_name == "-- Ignore / None --":
-                continue
-
-            raw_val = candidate_values.get(mapping.task_field, "")
-            
-            if mapping.value_mappings_json and raw_val:
-                try:
-                    val_map = json.loads(mapping.value_mappings_json)
-                    if isinstance(val_map, dict) and raw_val in val_map and val_map[raw_val]:
-                        raw_val = val_map[raw_val]
-                except Exception:
-                    pass
-
-            p_type = mapping.notion_property_type
-            p_name = mapping.notion_property_name
-
-            if p_type == "title":
-                notion_properties[p_name] = {
-                    "title": [{"text": {"content": str(raw_val)[:2000]}}]
-                }
-            elif p_type == "rich_text":
-                if raw_val:
-                    notion_properties[p_name] = {
-                        "rich_text": [{"text": {"content": str(raw_val)[:2000]}}]
-                    }
-            elif p_type == "select":
-                if raw_val:
-                    notion_properties[p_name] = {
-                        "select": {"name": str(raw_val)[:100]}
-                    }
-            elif p_type == "status":
-                if raw_val:
-                    notion_properties[p_name] = {
-                        "status": {"name": str(raw_val)[:100]}
-                    }
-            elif p_type == "date":
-                if raw_val:
-                    date_iso = NotionService._format_date_string(str(raw_val))
-                    if date_iso:
-                        notion_properties[p_name] = {
-                            "date": {"start": date_iso}
-                        }
-            elif p_type == "url":
-                if raw_val and (str(raw_val).startswith("http://") or str(raw_val).startswith("https://")):
-                    notion_properties[p_name] = {
-                        "url": str(raw_val)[:1000]
-                    }
-            elif p_type == "files":
-                if raw_val:
-                    filename = f"Email_{email_msg.id}.pdf" if email_msg else f"Task_{candidate.id}.pdf"
-                    notion_properties[p_name] = {
-                        "files": [{
-                            "name": filename,
-                            "type": "external",
-                            "external": {"url": str(raw_val)[:1000]}
-                        }]
-                    }
-            elif p_type == "checkbox":
-                notion_properties[p_name] = {
-                    "checkbox": bool(raw_val)
-                }
-            elif p_type == "relation":
-                if raw_val:
-                    page_ids = [extract_notion_id(pid) for pid in str(raw_val).split(",") if extract_notion_id(pid)]
-                    rel_payload = [{"id": pid} for pid in page_ids]
-                    if rel_payload:
-                        notion_properties[p_name] = {"relation": rel_payload}
-
-        if not any(prop.get("title") for prop in notion_properties.values()):
-            notion_properties["Name"] = {"title": [{"text": {"content": candidate.title[:2000]}}]}
-
-        clean_db_id = extract_notion_id(config.database_id)
-        url = "https://api.notion.com/v1/pages"
-        payload = {
-            "parent": {"database_id": clean_db_id},
-            "properties": notion_properties
-        }
-
         try:
-            with httpx.Client(timeout=10.0) as client:
+            with httpx.Client(timeout=30.0) as client:
+                file_upload_id = None
+                if pdf_path and pdf_path.exists():
+                    file_upload_id = NotionService.upload_file(client, config.api_token, pdf_path, pdf_filename)
+
+                notion_properties = {}
+
+                for mapping in mappings:
+                    if not mapping.notion_property_name or mapping.notion_property_name == "-- Ignore / None --":
+                        continue
+
+                    raw_val = candidate_values.get(mapping.task_field, "")
+                    
+                    if mapping.value_mappings_json and raw_val:
+                        try:
+                            val_map = json.loads(mapping.value_mappings_json)
+                            if isinstance(val_map, dict) and raw_val in val_map and val_map[raw_val]:
+                                raw_val = val_map[raw_val]
+                        except Exception:
+                            pass
+
+                    p_type = mapping.notion_property_type
+                    p_name = mapping.notion_property_name
+
+                    if p_type == "title":
+                        notion_properties[p_name] = {
+                            "title": [{"text": {"content": str(raw_val)[:2000]}}]
+                        }
+                    elif p_type == "rich_text":
+                        if raw_val:
+                            notion_properties[p_name] = {
+                                "rich_text": [{"text": {"content": str(raw_val)[:2000]}}]
+                            }
+                    elif p_type == "select":
+                        if raw_val:
+                            notion_properties[p_name] = {
+                                "select": {"name": str(raw_val)[:100]}
+                            }
+                    elif p_type == "status":
+                        if raw_val:
+                            notion_properties[p_name] = {
+                                "status": {"name": str(raw_val)[:100]}
+                            }
+                    elif p_type == "date":
+                        if raw_val:
+                            date_iso = NotionService._format_date_string(str(raw_val))
+                            if date_iso:
+                                notion_properties[p_name] = {
+                                    "date": {"start": date_iso}
+                                }
+                    elif p_type == "url":
+                        if raw_val and (str(raw_val).startswith("http://") or str(raw_val).startswith("https://")):
+                            notion_properties[p_name] = {
+                                "url": str(raw_val)[:1000]
+                            }
+                    elif p_type == "files":
+                        if file_upload_id:
+                            notion_properties[p_name] = {
+                                "files": [{
+                                    "type": "file_upload",
+                                    "file_upload": {
+                                        "id": file_upload_id
+                                    },
+                                    "name": pdf_filename
+                                }]
+                            }
+                        elif raw_val and (str(raw_val).startswith("http://") or str(raw_val).startswith("https://")):
+                            notion_properties[p_name] = {
+                                "files": [{
+                                    "name": pdf_filename,
+                                    "type": "external",
+                                    "external": {"url": str(raw_val)[:1000]}
+                                }]
+                            }
+                    elif p_type == "checkbox":
+                        notion_properties[p_name] = {
+                            "checkbox": bool(raw_val)
+                        }
+                    elif p_type == "relation":
+                        if raw_val:
+                            page_ids = [extract_notion_id(pid) for pid in str(raw_val).split(",") if extract_notion_id(pid)]
+                            rel_payload = [{"id": pid} for pid in page_ids]
+                            if rel_payload:
+                                notion_properties[p_name] = {"relation": rel_payload}
+
+                if not any(prop.get("title") for prop in notion_properties.values()):
+                    notion_properties["Name"] = {"title": [{"text": {"content": candidate.title[:2000]}}]}
+
+                clean_db_id = extract_notion_id(config.database_id)
+                url = "https://api.notion.com/v1/pages"
+
+                payload = {
+                    "parent": {"database_id": clean_db_id},
+                    "properties": notion_properties
+                }
+
                 res = client.post(url, headers=NotionService.get_headers(config.api_token), json=payload)
                 if res.status_code in (200, 201):
                     page_data = res.json()

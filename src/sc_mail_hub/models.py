@@ -4,10 +4,14 @@ Defines tables for email accounts, fetched email messages, task candidates,
 Notion configuration & field mappings, and AI settings.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
 from sc_mail_hub.database import Base
+
+
+def _utc_now():
+    return datetime.now(timezone.utc)
 
 
 class EmailAccount(Base):
@@ -24,7 +28,7 @@ class EmailAccount(Base):
     last_uid = Column(Integer, nullable=True)
     uid_validity = Column(String(64), nullable=True)
     last_synced_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utc_now)
 
     emails = relationship("EmailMessage", back_populates="account", cascade="all, delete-orphan")
 
@@ -41,7 +45,7 @@ class EmailMessage(Base):
     recipient = Column(String(255), nullable=True)
     subject = Column(String(500), nullable=False)
     body_text = Column(Text, nullable=False)
-    received_at = Column(DateTime, default=datetime.utcnow)
+    received_at = Column(DateTime, default=_utc_now)
     is_processed = Column(Boolean, default=False)
 
     account = relationship("EmailAccount", back_populates="emails")
@@ -73,8 +77,8 @@ class TaskCandidate(Base):
     previous_status = Column(String(20), nullable=True) # Tracks exact stage prior to IGNORED status for unignoring
     notion_page_id = Column(String(255), nullable=True)
     notion_url = Column(String(500), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=_utc_now)
+    updated_at = Column(DateTime, default=_utc_now, onupdate=_utc_now)
 
     email = relationship("EmailMessage", back_populates="task_candidate")
 
@@ -110,3 +114,27 @@ class AISettings(Base):
     api_key = Column(String(255), nullable=True)
     model_name = Column(String(100), default="gpt-4o-mini")
     custom_prompt = Column(Text, nullable=True)
+
+
+class SystemSettings(Base):
+    """Stores system-wide administrative configuration (IMAP sync, UI refresh, & auto-purge settings)."""
+    __tablename__ = "system_settings"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    # Background IMAP Email Sync Configuration
+    imap_sync_enabled = Column(Boolean, default=True)
+    imap_sync_interval_seconds = Column(Integer, default=300)
+
+    # Frontend Dashboard UI Auto-Refresh Configuration
+    ui_auto_refresh_enabled = Column(Boolean, default=True)
+    ui_auto_refresh_interval_seconds = Column(Integer, default=30)
+
+    # Automatic Purge Settings
+    auto_purge_synced_enabled = Column(Boolean, default=False)
+    purge_synced_days = Column(Integer, default=30)
+
+    auto_purge_ignored_enabled = Column(Boolean, default=False)
+    purge_ignored_days = Column(Integer, default=30)
+
+    updated_at = Column(DateTime, default=_utc_now, onupdate=_utc_now)

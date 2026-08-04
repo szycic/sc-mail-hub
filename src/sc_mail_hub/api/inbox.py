@@ -5,19 +5,23 @@ AI analysis execution, sample email ingestion, PDF generation, and WebSocket pro
 """
 
 import asyncio
+import re
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
 from typing import Dict, List, Optional
 from sc_mail_hub.database import get_db, SessionLocal
 from sc_mail_hub.models import TaskCandidate, EmailMessage, EmailAccount
-from sc_mail_hub.schemas import TaskCandidateOut, TaskCandidateUpdate, PaginatedTaskCandidates
+from sc_mail_hub.schemas import TaskCandidateOut, TaskCandidateUpdate, PaginatedTaskCandidates, BatchCandidatesRequest
 from sc_mail_hub.services.email_service import EmailService
 from sc_mail_hub.services.ai_service import AIService
 from sc_mail_hub.services.notion_service import NotionService
 
+from datetime import datetime, timezone
+
 router = APIRouter(prefix="/api/inbox", tags=["Inbox"])
 INGEST_JOB_QUEUES: Dict[str, asyncio.Queue] = {}
+LAST_SYNCED_AT: Optional[str] = None
 
 
 def _enqueue_ingest_event(loop: asyncio.AbstractEventLoop, job_id: str, event: dict) -> None:
@@ -30,6 +34,7 @@ def _enqueue_ingest_event(loop: asyncio.AbstractEventLoop, job_id: str, event: d
 
 
 def _run_sample_ingest_job(job_id: str, loop: asyncio.AbstractEventLoop) -> None:
+    global LAST_SYNCED_AT
     db = SessionLocal()
     try:
         accounts = db.query(EmailAccount).all()
@@ -67,6 +72,8 @@ def _run_sample_ingest_job(job_id: str, loop: asyncio.AbstractEventLoop) -> None
                         "emails_synced": total_emails,
                         "candidates_seeded": total_candidates
                     })
+
+        LAST_SYNCED_AT = datetime.now(timezone.utc).isoformat()
 
         _enqueue_ingest_event(loop, job_id, {
             "status": "completed",
@@ -121,12 +128,45 @@ async def sample_ingest_progress_ws(websocket: WebSocket, job_id: str):
     finally:
         INGEST_JOB_QUEUES.pop(job_id, None)
 
+
+@router.get("/stats")
+def get_inbox_stats(db: Session = Depends(get_db)):
+    global LAST_SYNCED_AT
+    from sqlalchemy import func
+    counts_raw = db.query(TaskCandidate.status, func.count(TaskCandidate.id)).group_by(TaskCandidate.status).all()
+    status_counts = {status: count for status, count in counts_raw}
+
+    pending = status_counts.get("PENDING", 0)
+    ai_processed = status_counts.get("AI_PROCESSED", 0)
+    created = status_counts.get("CREATED", 0)
+    ignored = status_counts.get("IGNORED", 0)
+    total = sum(status_counts.values())
+
+    last_synced = LAST_SYNCED_AT
+    if not last_synced:
+        latest_msg = db.query(EmailMessage).order_by(EmailMessage.received_at.desc()).first()
+        if latest_msg and latest_msg.received_at:
+            last_synced = latest_msg.received_at.isoformat()
+
+    return {
+        "counts": {
+            "PENDING": pending,
+            "AI_PROCESSED": ai_processed,
+            "CREATED": created,
+            "IGNORED": ignored,
+            "ALL": total
+        },
+        "last_synced_at": last_synced
+    }
+
+
 @router.get("/candidates", response_model=PaginatedTaskCandidates)
 def get_candidates(
     status: Optional[str] = Query(None, description="Filter by status e.g. PENDING, CREATED, IGNORED, ALL"),
     account_id: Optional[str] = Query(None, description="Filter by connected account ID or ALL"),
     recipient_type: Optional[str] = Query(None, description="Filter by recipient type e.g. DIRECT, MAILING_GROUP, ALL"),
     sort_by: Optional[str] = Query("NEWEST", description="Sort order e.g. NEWEST, OLDEST, DIRECT_FIRST, GROUP_FIRST"),
+    search: Optional[str] = Query(None, description="Search keyword"),
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(10, ge=1, le=100, description="Items per page"),
     db: Session = Depends(get_db)
@@ -156,7 +196,6 @@ def get_candidates(
             accounts_by_id = {acc.id: acc for acc in accounts}
 
     result = []
-    import re
     for c in candidates:
         email_msg = emails_by_id.get(c.email_id) if c.email_id else None
         out = TaskCandidateOut.model_validate(c)
@@ -192,6 +231,13 @@ def get_candidates(
         
         if recipient_type and recipient_type.upper() != "ALL":
             if out.recipient_type != recipient_type.upper():
+                continue
+
+        if search and search.strip():
+            q = search.strip().lower()
+            body_txt = (email_msg.body_text or "").lower() if email_msg else ""
+            search_haystack = f"{out.title or ''} {out.summary or ''} {out.category or ''} {out.sender or ''} {out.subject or ''} {out.recipient or ''} {body_txt}".lower()
+            if q not in search_haystack:
                 continue
 
         result.append(out)
@@ -271,21 +317,29 @@ def update_candidate(candidate_id: int, payload: TaskCandidateUpdate, db: Sessio
     return out
 
 @router.post("/candidates/{candidate_id}/prepare-task", response_model=TaskCandidateOut)
-def prepare_task_with_ai(candidate_id: int, db: Session = Depends(get_db)):
-    """Run AI analysis only when candidate status is PENDING, then set status to AI_PROCESSED."""
+def prepare_task_with_ai(
+    candidate_id: int,
+    force: bool = Query(False, description="Force AI re-analysis"),
+    allow_fallback: bool = Query(False, description="Allow falling back to heuristic engine if AI provider fails"),
+    db: Session = Depends(get_db)
+):
+    """Run AI analysis on candidate, or force re-analysis if force=True."""
     candidate = db.query(TaskCandidate).filter(TaskCandidate.id == candidate_id).first()
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidate not found")
 
     email_msg = db.query(EmailMessage).filter(EmailMessage.id == candidate.email_id).first() if candidate.email_id else None
 
-    # Only invoke AI analysis if candidate has not been processed yet!
-    if candidate.status == "PENDING" and email_msg:
-        candidate = AIService.analyze_email(email_msg, db)
+    # Invoke AI analysis if candidate is PENDING or force=True
+    if (candidate.status == "PENDING" or force) and email_msg:
+        try:
+            candidate = AIService.analyze_email(email_msg, db, allow_fallback=allow_fallback)
+        except RuntimeError as e:
+            raise HTTPException(status_code=400, detail=str(e))
         candidate.status = "AI_PROCESSED"
         db.commit()
         db.refresh(candidate)
-    elif candidate.status == "PENDING":
+    elif candidate.status == "PENDING" or force:
         candidate.status = "AI_PROCESSED"
         db.commit()
         db.refresh(candidate)
@@ -385,6 +439,7 @@ def clear_all_messages(db: Session = Depends(get_db)):
     for account in db.query(EmailAccount).all():
         account.last_uid = 0
         account.last_synced_at = None
+    EmailService.purge_all_pdfs()
     db.commit()
     return {
         "message": "Inbox emptied successfully",
@@ -415,3 +470,78 @@ def trigger_sample_ingest(db: Session = Depends(get_db)):
         "message": f"Synced {len(total_emails)} emails and prepared {len(new_candidates)} candidates for AI-on-demand review.",
         "candidates_created": len(new_candidates)
     }
+
+
+@router.post("/candidates/batch-process")
+def batch_process_candidates(
+    payload: BatchCandidatesRequest,
+    allow_fallback: bool = Query(False),
+    db: Session = Depends(get_db)
+):
+    candidates = db.query(TaskCandidate).filter(TaskCandidate.id.in_(payload.candidate_ids)).all()
+    count = 0
+    for c in candidates:
+        email_msg = db.query(EmailMessage).filter(EmailMessage.id == c.email_id).first() if c.email_id else None
+        if c.status == "PENDING" and email_msg:
+            try:
+                c = AIService.analyze_email(email_msg, db, allow_fallback=allow_fallback)
+            except RuntimeError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+            c.status = "AI_PROCESSED"
+            count += 1
+        elif c.status == "PENDING":
+            c.status = "AI_PROCESSED"
+            count += 1
+    db.commit()
+    return {"message": f"Successfully processed {count} task(s) with AI", "processed_count": count}
+
+
+@router.post("/candidates/batch-reprocess")
+def batch_reprocess_candidates(
+    payload: BatchCandidatesRequest,
+    allow_fallback: bool = Query(False),
+    db: Session = Depends(get_db)
+):
+    candidates = db.query(TaskCandidate).filter(TaskCandidate.id.in_(payload.candidate_ids)).all()
+    count = 0
+    for c in candidates:
+        email_msg = db.query(EmailMessage).filter(EmailMessage.id == c.email_id).first() if c.email_id else None
+        if email_msg:
+            try:
+                c = AIService.analyze_email(email_msg, db, allow_fallback=allow_fallback)
+            except RuntimeError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+            c.status = "AI_PROCESSED"
+            count += 1
+        else:
+            c.status = "AI_PROCESSED"
+            count += 1
+    db.commit()
+    return {"message": f"Successfully reprocessed {count} task(s) with AI", "reprocessed_count": count}
+
+
+@router.post("/candidates/batch-ignore")
+def batch_ignore_candidates(payload: BatchCandidatesRequest, db: Session = Depends(get_db)):
+    candidates = db.query(TaskCandidate).filter(TaskCandidate.id.in_(payload.candidate_ids)).all()
+    count = 0
+    for c in candidates:
+        if c.status != "IGNORED":
+            c.previous_status = c.status
+            c.status = "IGNORED"
+            count += 1
+    db.commit()
+    return {"message": f"Marked {count} candidate(s) as ignored", "ignored_count": count}
+
+
+@router.post("/candidates/batch-unignore")
+def batch_unignore_candidates(payload: BatchCandidatesRequest, db: Session = Depends(get_db)):
+    candidates = db.query(TaskCandidate).filter(TaskCandidate.id.in_(payload.candidate_ids)).all()
+    count = 0
+    for c in candidates:
+        target_status = c.previous_status or "PENDING"
+        if target_status == "IGNORED":
+            target_status = "PENDING"
+        c.status = target_status
+        count += 1
+    db.commit()
+    return {"message": f"Restored {count} candidate(s)", "restored_count": count}

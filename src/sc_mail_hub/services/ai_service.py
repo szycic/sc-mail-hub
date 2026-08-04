@@ -158,7 +158,7 @@ class AIService:
         return ["HIGH", "MEDIUM", "LOW"]
 
     @staticmethod
-    def analyze_email(email_msg: EmailMessage, db: Session) -> TaskCandidate:
+    def analyze_email(email_msg: EmailMessage, db: Session, allow_fallback: bool = False) -> TaskCandidate:
         """Analyze email using configured AI provider or smart fallback heuristic engine."""
         ai_settings = db.query(AISettings).first()
         provider = ai_settings.provider if ai_settings else "mock"
@@ -168,14 +168,26 @@ class AIService:
 
         analysis = None
 
-        if provider == "openai" and api_key:
-            analysis = AIService._analyze_openai(email_msg, api_key, ai_settings.model_name or "gpt-4o-mini", priority_options)
-        elif provider == "gemini" and api_key:
-            analysis = AIService._analyze_gemini(email_msg, api_key, ai_settings.model_name, priority_options)
-        elif provider == "groq" and api_key:
-            analysis = AIService._analyze_groq(email_msg, api_key, ai_settings.model_name, priority_options)
-        
+        if provider in ["openai", "gemini", "groq"]:
+            if not api_key:
+                if not allow_fallback:
+                    raise RuntimeError(f"AI Provider '{provider}' is enabled but no API Key is set in Settings.")
+            else:
+                try:
+                    if provider == "openai":
+                        analysis = AIService._analyze_openai(email_msg, api_key, ai_settings.model_name or "gpt-4o-mini", priority_options)
+                    elif provider == "gemini":
+                        analysis = AIService._analyze_gemini(email_msg, api_key, ai_settings.model_name, priority_options)
+                    elif provider == "groq":
+                        analysis = AIService._analyze_groq(email_msg, api_key, ai_settings.model_name, priority_options)
+                except Exception as e:
+                    if not allow_fallback:
+                        raise RuntimeError(f"AI Provider '{provider}' error: {str(e)}")
+                    analysis = None
+
         if not analysis:
+            if provider in ["openai", "gemini", "groq"] and not allow_fallback:
+                raise RuntimeError(f"AI Provider '{provider}' failed to return analysis.")
             analysis = AIService._analyze_heuristic(email_msg, priority_options)
 
         # Extract real HTTP/HTTPS URL from email body if present
@@ -306,10 +318,10 @@ class AIService:
         return clean_title or "No Subject"
 
     @staticmethod
-    def _analyze_openai(email_msg: EmailMessage, api_key: str, model_name: str, priority_options: list[str] = None) -> Optional[Dict[str, Any]]:
-        """Call OpenAI Chat Completions API for task analysis."""
+    def _build_analysis_prompt(email_msg: EmailMessage, priority_options: Optional[list[str]] = None) -> str:
+        """Construct standard task extraction prompt for LLM providers."""
         options_str = ", ".join(f'"{opt}"' for opt in (priority_options or ["HIGH", "MEDIUM", "LOW"]))
-        prompt = f"""Analyze the following email and return a JSON object with task details:
+        return f"""Analyze the following email and return a JSON object with task details:
 Subject: {email_msg.subject}
 From: {email_msg.sender}
 Body: {email_msg.body_text}
@@ -327,6 +339,11 @@ JSON Schema:
 }}
 Return ONLY valid JSON.
 """
+
+    @staticmethod
+    def _analyze_openai(email_msg: EmailMessage, api_key: str, model_name: str, priority_options: list[str] = None) -> Optional[Dict[str, Any]]:
+        """Call OpenAI Chat Completions API for task analysis."""
+        prompt = AIService._build_analysis_prompt(email_msg, priority_options)
         try:
             headers = {
                 "Authorization": f"Bearer {api_key}",
@@ -342,71 +359,43 @@ Return ONLY valid JSON.
             if response.status_code == 200:
                 content = response.json()["choices"][0]["message"]["content"]
                 return json.loads(content)
+            else:
+                err_detail = response.json().get("error", {}).get("message") or response.text[:150]
+                raise RuntimeError(f"OpenAI (HTTP {response.status_code}): {err_detail}")
+        except RuntimeError:
+            raise
         except Exception as e:
-            print(f"OpenAI analysis error: {e}")
-        return None
+            raise RuntimeError(f"OpenAI call failed: {e}")
 
     @staticmethod
     def _analyze_gemini(email_msg: EmailMessage, api_key: str, model_name: str = None, priority_options: list[str] = None) -> Optional[Dict[str, Any]]:
         """Call Gemini REST API for task analysis using gemini-3.1-flash-lite."""
         model = model_name or "gemini-3.1-flash-lite"
-        options_str = ", ".join(f'"{opt}"' for opt in (priority_options or ["HIGH", "MEDIUM", "LOW"]))
-        prompt = f"""Analyze the following email and return a JSON object with task details:
-Subject: {email_msg.subject}
-From: {email_msg.sender}
-Body: {email_msg.body_text}
-
-Allowed Priority Options synced from Notion Database: [{options_str}]
-
-JSON Schema:
-{{
-  "is_task": boolean,
-  "priority": MUST be one of [{options_str}],
-  "title": "Actionable task title",
-  "summary": "Brief 1-2 sentence summary",
-  "start_date": "Extracted start date in ISO YYYY-MM-DD format (e.g. 2026-08-04) or null",
-  "deadline": "Extracted due date in ISO YYYY-MM-DD format (e.g. 2026-08-04) or null"
-}}
-Return ONLY valid JSON wrapped in ```json ```.
-"""
+        prompt = AIService._build_analysis_prompt(email_msg, priority_options)
         try:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
             payload = {"contents": [{"parts": [{"text": prompt}]}]}
             response = httpx.post(url, json=payload, timeout=12.0)
             if response.status_code == 200:
                 data = response.json()
-                text = data["candidates"][0]["content"]["parts"][0]["text"]
-                match = re.search(r'```json\s*(\{.*?\})\s*```', text, re.DOTALL)
-                if match:
-                    return json.loads(match.group(1))
+                text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+                if text.startswith("```"):
+                    text = re.sub(r'^```(?:json)?\s*', '', text)
+                    text = re.sub(r'\s*```$', '', text)
                 return json.loads(text)
+            else:
+                err_detail = response.json().get("error", {}).get("message") or response.text[:150]
+                raise RuntimeError(f"Gemini (HTTP {response.status_code}): {err_detail}")
+        except RuntimeError:
+            raise
         except Exception as e:
-            print(f"Gemini analysis error: {e}")
-        return None
+            raise RuntimeError(f"Gemini call failed: {e}")
 
     @staticmethod
     def _analyze_groq(email_msg: EmailMessage, api_key: str, model_name: str = None, priority_options: list[str] = None) -> Optional[Dict[str, Any]]:
         """Call Groq Cloud API for task analysis."""
         model = model_name or "llama-3.3-70b-versatile"
-        options_str = ", ".join(f'"{opt}"' for opt in (priority_options or ["HIGH", "MEDIUM", "LOW"]))
-        prompt = f"""Analyze the following email and return a JSON object with task details:
-Subject: {email_msg.subject}
-From: {email_msg.sender}
-Body: {email_msg.body_text}
-
-Allowed Priority Options synced from Notion Database: [{options_str}]
-
-JSON Schema:
-{{
-  "is_task": boolean,
-  "priority": MUST be one of [{options_str}],
-  "title": "Actionable task title",
-  "summary": "Brief 1-2 sentence summary",
-  "start_date": "Extracted start date in ISO YYYY-MM-DD format (e.g. 2026-08-04) or null",
-  "deadline": "Extracted due date in ISO YYYY-MM-DD format (e.g. 2026-08-04) or null"
-}}
-Return ONLY valid JSON.
-"""
+        prompt = AIService._build_analysis_prompt(email_msg, priority_options)
         try:
             headers = {
                 "Authorization": f"Bearer {api_key}",
@@ -422,6 +411,10 @@ Return ONLY valid JSON.
             if response.status_code == 200:
                 content = response.json()["choices"][0]["message"]["content"]
                 return json.loads(content)
+            else:
+                err_detail = response.json().get("error", {}).get("message") or response.text[:150]
+                raise RuntimeError(f"Groq (HTTP {response.status_code}): {err_detail}")
+        except RuntimeError:
+            raise
         except Exception as e:
-            print(f"Groq analysis error: {e}")
-        return None
+            raise RuntimeError(f"Groq call failed: {e}")

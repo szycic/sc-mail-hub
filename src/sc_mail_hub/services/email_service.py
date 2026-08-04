@@ -279,6 +279,33 @@ class EmailService:
         return pdf_dir
 
     @staticmethod
+    def purge_pdf_files(email_id: Optional[int] = None, candidate_id: Optional[int] = None):
+        """Delete static PDF file(s) from disk associated with an email message or task candidate."""
+        try:
+            pdf_dir = EmailService.get_pdf_dir()
+            if email_id:
+                pdf_file = pdf_dir / f"email_{email_id}.pdf"
+                if pdf_file.exists():
+                    pdf_file.unlink()
+            if candidate_id:
+                cand_file = pdf_dir / f"Task_{candidate_id}.pdf"
+                if cand_file.exists():
+                    cand_file.unlink()
+        except Exception as err:
+            logger.error(f"Error deleting PDF file: {err}")
+
+    @staticmethod
+    def purge_all_pdfs():
+        """Delete all generated PDF files from disk."""
+        try:
+            pdf_dir = EmailService.get_pdf_dir()
+            for pdf_file in pdf_dir.glob("*.pdf"):
+                if pdf_file.is_file():
+                    pdf_file.unlink()
+        except Exception as err:
+            logger.error(f"Error purging all PDF files: {err}")
+
+    @staticmethod
     def generate_email_pdf(email_msg: EmailMessage) -> str:
         """Generate a clean PDF report of the raw email message supporting Polish characters and return relative URL path."""
         from reportlab.lib.pagesizes import A4

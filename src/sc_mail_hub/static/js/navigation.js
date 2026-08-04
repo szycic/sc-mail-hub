@@ -19,6 +19,9 @@ function switchTab(tabName, updateHistory = true) {
     if (window.location.pathname !== newPath) {
       history.pushState({ tab: target }, "", newPath);
     }
+    if (target === "inbox" && typeof updateUrlParams === "function") {
+      updateUrlParams();
+    }
   }
 }
 

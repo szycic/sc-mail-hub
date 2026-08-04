@@ -4,27 +4,39 @@
     style="display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; flex-wrap:wrap; gap:12px;">
     <div style="display:flex; gap:8px; flex-wrap:wrap;">
       <button class="btn btn-outline btn-sm inbox-filter-btn active" id="filter-btn-PENDING"
-        onclick="filterInbox('PENDING')">Pending Emails</button>
+        onclick="filterInbox('PENDING')">Pending Emails <span class="tab-badge" id="badge-PENDING">0</span></button>
       <button class="btn btn-outline btn-sm inbox-filter-btn" id="filter-btn-AI_PROCESSED"
-        onclick="filterInbox('AI_PROCESSED')">AI Processed</button>
+        onclick="filterInbox('AI_PROCESSED')">AI Processed <span class="tab-badge"
+          id="badge-AI_PROCESSED">0</span></button>
       <button class="btn btn-outline btn-sm inbox-filter-btn" id="filter-btn-CREATED"
-        onclick="filterInbox('CREATED')">Synced to Notion</button>
+        onclick="filterInbox('CREATED')">Synced to Notion <span class="tab-badge" id="badge-CREATED">0</span></button>
       <button class="btn btn-outline btn-sm inbox-filter-btn" id="filter-btn-IGNORED"
-        onclick="filterInbox('IGNORED')">Ignored</button>
-      <button class="btn btn-outline btn-sm inbox-filter-btn" id="filter-btn-ALL" onclick="filterInbox('ALL')">All
-        Messages</button>
+        onclick="filterInbox('IGNORED')">Ignored <span class="tab-badge" id="badge-IGNORED">0</span></button>
+      <button class="btn btn-outline btn-sm inbox-filter-btn" id="filter-btn-ALL" onclick="filterInbox('ALL')">All <span
+          class="tab-badge" id="badge-ALL">0</span></button>
     </div>
 
-    <button class="btn btn-primary btn-sm" onclick="triggerSampleIngest()">
-      ⚡ Load Emails
-    </button>
+    <div style="display:flex; align-items:center; gap:12px;">
+      <span id="last-synced-indicator" style="font-size:12px; color:var(--text-dim); font-weight:500;">
+        Last synced: --
+      </span>
+      <button class="btn btn-primary btn-sm" onclick="triggerSampleIngest()">
+        ⚡ Load Emails
+      </button>
+    </div>
   </div>
 
   <div
     style="display:flex; align-items:center; justify-content:space-between; margin-bottom:20px; background:rgba(255,255,255,0.02); padding:10px 14px; border-radius:8px; border:1px solid rgba(255,255,255,0.06); flex-wrap:wrap; gap:12px;">
     <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
       <div style="display:flex; align-items:center; gap:6px;">
-        <span style="font-size:12px; color:var(--text-dim); font-weight:600;">📧 Account:</span>
+        <span style="font-size:12px; color:var(--text-dim); font-weight:600;">Search:</span>
+        <input type="text" id="filter-search" class="select-input" placeholder="Search title, sender, body..."
+          style="padding:4px 10px; font-size:12px; width:180px;" oninput="handleSearchInput()">
+      </div>
+
+      <div style="display:flex; align-items:center; gap:6px;">
+        <span style="font-size:12px; color:var(--text-dim); font-weight:600;">Account:</span>
         <select id="filter-account" class="select-input" style="padding:4px 10px; font-size:12px; width:auto;"
           onchange="loadCandidates()">
           <option value="ALL">All Connected Accounts</option>
@@ -32,25 +44,57 @@
       </div>
 
       <div style="display:flex; align-items:center; gap:6px;">
-        <span style="font-size:12px; color:var(--text-dim); font-weight:600;">📩 Recipient Type:</span>
+        <span style="font-size:12px; color:var(--text-dim); font-weight:600;">Recipient Type:</span>
         <select id="filter-recipient-type" class="select-input" style="padding:4px 10px; font-size:12px; width:auto;"
           onchange="loadCandidates()">
           <option value="ALL">All Types</option>
-          <option value="DIRECT">👤 Direct Emails Only</option>
-          <option value="MAILING_GROUP">👥 Mailing Groups Only</option>
+          <option value="DIRECT">Direct Emails Only</option>
+          <option value="MAILING_GROUP">Mailing Groups Only</option>
         </select>
       </div>
     </div>
 
     <div style="display:flex; align-items:center; gap:6px;">
-      <span style="font-size:12px; color:var(--text-dim); font-weight:600;">↕️ Sort By:</span>
+      <span style="font-size:12px; color:var(--text-dim); font-weight:600;">Sort By:</span>
       <select id="sort-candidates" class="select-input" style="padding:4px 10px; font-size:12px; width:auto;"
         onchange="loadCandidates()">
         <option value="NEWEST">Newest First</option>
         <option value="OLDEST">Oldest First</option>
-        <option value="DIRECT_FIRST">👤 Direct Emails First</option>
-        <option value="GROUP_FIRST">👥 Mailing Groups First</option>
+        <option value="DIRECT_FIRST">Direct Emails First</option>
+        <option value="GROUP_FIRST">Mailing Groups First</option>
       </select>
+    </div>
+  </div>
+
+  <div id="bulk-action-bar"
+    style="display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; background:rgba(99,102,241,0.08); padding:8px 14px; border-radius:8px; border:1px solid rgba(99,102,241,0.2); flex-wrap:wrap; gap:10px;">
+    <div style="display:flex; align-items:center; gap:10px;">
+      <label
+        style="font-size:12px; font-weight:600; color:var(--text-main); display:flex; align-items:center; gap:6px; cursor:pointer;">
+        <input type="checkbox" id="select-all-cb" onchange="toggleSelectAllCandidates(this.checked)">
+        <span>Select All</span>
+      </label>
+      <span id="bulk-selected-count" style="font-size:12px; color:var(--text-dim); font-weight:500;">
+        (0 selected)
+      </span>
+    </div>
+
+    <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+      <button class="btn btn-primary btn-sm" id="btn-bulk-process" onclick="bulkProcessCandidates()" disabled>
+        🤖 Bulk Process
+      </button>
+      <button class="btn btn-primary btn-sm" id="btn-bulk-reprocess" onclick="bulkReprocessCandidates()" disabled>
+        🔄 Bulk Reprocess
+      </button>
+      <button class="btn btn-success btn-sm" id="btn-bulk-notion" onclick="bulkOpenNotionTasks()" disabled>
+        🔗 Bulk Open in Notion
+      </button>
+      <button class="btn btn-outline btn-sm" id="btn-bulk-ignore" onclick="bulkIgnoreCandidates()" disabled>
+        🚫 Bulk Ignore
+      </button>
+      <button class="btn btn-outline btn-sm" id="btn-bulk-unignore" onclick="bulkUnignoreCandidates()" disabled>
+        🔄 Bulk Unignore
+      </button>
     </div>
   </div>
 
