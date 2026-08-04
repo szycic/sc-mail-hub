@@ -112,7 +112,7 @@ class AISettings(Base):
     id = Column(Integer, primary_key=True, index=True)
     provider = Column(String(50), default="mock")  # 'mock', 'openai', 'gemini', 'groq'
     api_key = Column(String(255), nullable=True)
-    model_name = Column(String(100), default="gpt-4o-mini")
+    model_name = Column(String(100), nullable=True)
     custom_prompt = Column(Text, nullable=True)
 
 

@@ -175,7 +175,7 @@ class AIService:
             else:
                 try:
                     if provider == "openai":
-                        analysis = AIService._analyze_openai(email_msg, api_key, ai_settings.model_name or "gpt-4o-mini", priority_options)
+                        analysis = AIService._analyze_openai(email_msg, api_key, ai_settings.model_name, priority_options)
                     elif provider == "gemini":
                         analysis = AIService._analyze_gemini(email_msg, api_key, ai_settings.model_name, priority_options)
                     elif provider == "groq":
