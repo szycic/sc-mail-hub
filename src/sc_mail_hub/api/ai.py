@@ -17,7 +17,7 @@ router = APIRouter(prefix="/api/ai", tags=["AI Settings"])
 def get_ai_settings(db: Session = Depends(get_db)):
     ai_set = db.query(AISettings).first()
     if not ai_set:
-        ai_set = AISettings(provider="mock", model_name="gpt-4o-mini")
+        ai_set = AISettings(provider="mock")
         db.add(ai_set)
         db.commit()
         db.refresh(ai_set)
@@ -25,7 +25,7 @@ def get_ai_settings(db: Session = Depends(get_db)):
     return AISettingsOut(
         provider=ai_set.provider,
         api_key_configured=bool(ai_set.api_key),
-        model_name=ai_set.model_name or "gpt-4o-mini",
+        model_name=ai_set.model_name,
         custom_prompt=ai_set.custom_prompt
     )
 
