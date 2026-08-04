@@ -218,4 +218,4 @@ __marimo__/
 .streamlit/secrets.toml
 
 # Local configuration
-sc_mail_hub.db
+data/

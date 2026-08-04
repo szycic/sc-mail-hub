@@ -46,14 +46,14 @@ async def background_email_sync_loop():
     """Background task running every 5 minutes to fetch emails automatically."""
     while True:
         try:
-            await asyncio.sleep(300) # Sync every 5 minutes
+            await asyncio.sleep(settings.POLL_INTERVAL_SECONDS)
             db = SessionLocal()
             try:
                 accs = db.query(EmailAccount).all()
                 for acc in accs:
                     msgs = EmailService.fetch_from_imap(acc, db)
                     for msg in msgs:
-                        AIService.analyze_email(msg, db)
+                        AIService.ensure_candidate_from_email(msg, db)
             except Exception as err:
                 print(f"Background email sync error: {err}")
             finally:
@@ -103,4 +103,4 @@ def index_page(request: Request):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("sc_mail_hub.main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("sc_mail_hub.main:app", host=settings.HOST, port=settings.PORT, reload=True)

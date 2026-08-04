@@ -13,6 +13,8 @@ class EmailAccount(Base):
     auth_type = Column(String(50), default="imap")  # 'oauth2', 'password'
     credentials_json = Column(Text, nullable=True)  # Store JSON with host, port, pass, oauth tokens
     is_active = Column(Boolean, default=True)
+    last_uid = Column(Integer, nullable=True)
+    uid_validity = Column(String(64), nullable=True)
     last_synced_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -23,6 +25,7 @@ class EmailMessage(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     account_id = Column(Integer, ForeignKey("email_accounts.id"), nullable=True)
+    email_uid = Column(Integer, nullable=True)
     message_id = Column(String(255), index=True, nullable=True)
     sender = Column(String(255), nullable=False)
     recipient = Column(String(255), nullable=True)

@@ -46,8 +46,14 @@ def sync_account(account_id: int, db: Session = Depends(get_db)):
     new_messages = EmailService.fetch_from_imap(acc, db)
     task_count = 0
     for msg in new_messages:
-        AIService.analyze_email(msg, db)
+        AIService.ensure_candidate_from_email(msg, db)
         task_count += 1
+
+    return {
+        "message": f"Synced {len(new_messages)} emails. {task_count} candidates ready for review.",
+        "emails_synced": len(new_messages),
+        "candidates_seeded": task_count
+    }
 
 @router.post("/{account_id}/test")
 def test_account_connection(account_id: int, db: Session = Depends(get_db)):

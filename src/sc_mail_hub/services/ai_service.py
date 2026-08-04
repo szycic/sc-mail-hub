@@ -7,6 +7,42 @@ from sc_mail_hub.models import EmailMessage, TaskCandidate, AISettings
 
 class AIService:
     @staticmethod
+    def ensure_candidate_from_email(email_msg: EmailMessage, db: Session) -> TaskCandidate:
+        """Create or refresh a lightweight candidate without calling paid AI APIs."""
+        existing_candidate = db.query(TaskCandidate).filter(TaskCandidate.email_id == email_msg.id).first()
+        heuristic = AIService._analyze_heuristic(email_msg)
+
+        title = AIService._normalize_title(email_msg.subject)
+        summary = heuristic.get("summary") or (email_msg.body_text or "")[:240]
+        start_date = heuristic.get("start_date")
+
+        if existing_candidate:
+            existing_candidate.title = title or existing_candidate.title
+            existing_candidate.summary = summary or existing_candidate.summary
+            existing_candidate.importance = existing_candidate.importance or "LOW"
+            existing_candidate.priority = existing_candidate.priority or "LOW"
+            if not existing_candidate.start_date:
+                existing_candidate.start_date = start_date
+            candidate = existing_candidate
+        else:
+            candidate = TaskCandidate(
+                email_id=email_msg.id,
+                title=title,
+                summary=summary,
+                importance="LOW",
+                is_task=True,
+                priority="LOW",
+                start_date=start_date,
+                deadline=None,
+                status="PENDING"
+            )
+            db.add(candidate)
+
+        db.commit()
+        db.refresh(candidate)
+        return candidate
+
+    @staticmethod
     def test_ai_connection(provider: str, api_key: str, model_name: str) -> Dict[str, Any]:
         """Test API connectivity for the configured AI provider."""
         provider = (provider or "mock").lower()
@@ -184,8 +220,7 @@ class AIService:
         if not start_date and email_msg.received_at:
             start_date = email_msg.received_at.strftime("%d %b")
         
-        clean_title = subject.strip()
-        clean_title = re.sub(r'^(RE|Fwd):\s*', '', clean_title, flags=re.IGNORECASE)
+        clean_title = AIService._normalize_title(subject)
 
         summary_lines = [line.strip() for line in body.split("\n") if line.strip() and len(line.strip()) > 10]
         summary = summary_lines[0] if summary_lines else subject
@@ -199,6 +234,12 @@ class AIService:
             "start_date": start_date,
             "deadline": deadline
         }
+
+    @staticmethod
+    def _normalize_title(subject: Optional[str]) -> str:
+        clean_title = (subject or "No Subject").strip()
+        clean_title = re.sub(r'^(RE|Fwd):\s*', '', clean_title, flags=re.IGNORECASE)
+        return clean_title or "No Subject"
 
     @staticmethod
     def _analyze_openai(email_msg: EmailMessage, api_key: str, model_name: str) -> Optional[Dict[str, Any]]:

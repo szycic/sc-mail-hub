@@ -183,8 +183,8 @@ function renderCandidates(candidates) {
 
         <div class="candidate-actions">
           ${!isCreated && !isIgnored ? `
-            <button class="btn btn-primary btn-sm" onclick="createNotionTask(${c.id})">
-              ➕ Create Task
+            <button class="btn btn-primary btn-sm" onclick="openTaskReviewModal(${c.id})">
+              ➕ Add to Notion
             </button>
             <button class="btn btn-outline btn-sm" onclick="ignoreCandidate(${c.id})">
               🚫 Ignore
@@ -216,28 +216,92 @@ function renderCandidates(candidates) {
   }).join("");
 }
 
-async function createNotionTask(candidateId) {
+async function openTaskReviewModal(candidateId) {
   const card = document.getElementById(`candidate-card-${candidateId}`);
   if (card) card.style.opacity = "0.6";
 
-  showToast("Syncing task candidate to Notion...", "info");
+  showToast("Preparing AI summary for your review...", "info");
 
   try {
-    const res = await fetch(`/api/inbox/candidates/${candidateId}/create-task`, {
+    const res = await fetch(`/api/inbox/candidates/${candidateId}/prepare-task`, {
       method: "POST"
     });
     const data = await res.json();
 
-    if (res.ok && data.notion_url) {
-      showToast("Task successfully created in Notion!", "success");
-      loadCandidates(currentStatusFilter);
+    if (res.ok) {
+      fillTaskReviewForm(data);
+      const modal = document.getElementById("task-review-modal");
+      if (modal) modal.classList.add("active");
+      if (card) card.style.opacity = "1";
     } else {
-      showToast(data.detail || "Failed to create task in Notion", "error");
+      showToast(data.detail || "Failed to prepare task", "error");
       if (card) card.style.opacity = "1";
     }
   } catch (err) {
     showToast(`Error: ${err.message}`, "error");
     if (card) card.style.opacity = "1";
+  }
+}
+
+function fillTaskReviewForm(candidate) {
+  const idInput = document.getElementById("review-candidate-id");
+  const titleInput = document.getElementById("review-title");
+  const summaryInput = document.getElementById("review-summary");
+  const importanceInput = document.getElementById("review-importance");
+  const priorityInput = document.getElementById("review-priority");
+  const startDateInput = document.getElementById("review-start-date");
+  const deadlineInput = document.getElementById("review-deadline");
+
+  if (idInput) idInput.value = String(candidate.id);
+  if (titleInput) titleInput.value = candidate.title || "";
+  if (summaryInput) summaryInput.value = candidate.summary || "";
+  if (importanceInput) importanceInput.value = candidate.importance || "MEDIUM";
+  if (priorityInput) priorityInput.value = candidate.priority || "MEDIUM";
+  if (startDateInput) startDateInput.value = candidate.start_date || "";
+  if (deadlineInput) deadlineInput.value = candidate.deadline || "";
+}
+
+function closeTaskReviewModal(e) {
+  if (e && e.target && e.target !== e.currentTarget) return;
+  const modal = document.getElementById("task-review-modal");
+  if (modal) modal.classList.remove("active");
+}
+
+async function submitReviewedTaskToNotion() {
+  const candidateId = Number(document.getElementById("review-candidate-id")?.value || 0);
+  if (!candidateId) {
+    showToast("Missing candidate id", "error");
+    return;
+  }
+
+  const payload = {
+    title: document.getElementById("review-title")?.value || "",
+    summary: document.getElementById("review-summary")?.value || "",
+    importance: document.getElementById("review-importance")?.value || "MEDIUM",
+    priority: document.getElementById("review-priority")?.value || "MEDIUM",
+    start_date: document.getElementById("review-start-date")?.value || null,
+    deadline: document.getElementById("review-deadline")?.value || null
+  };
+
+  showToast("Creating reviewed task in Notion...", "info");
+
+  try {
+    const res = await fetch(`/api/inbox/candidates/${candidateId}/create-task`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+
+    if (res.ok && data.notion_url) {
+      closeTaskReviewModal();
+      showToast("Task successfully created in Notion!", "success");
+      loadCandidates(currentStatusFilter);
+    } else {
+      showToast(data.detail || "Failed to create task in Notion", "error");
+    }
+  } catch (err) {
+    showToast(`Error: ${err.message}`, "error");
   }
 }
 
@@ -317,34 +381,67 @@ function closeEmailPreviewModal(e) {
 async function triggerSampleIngest() {
   const loadingToast = showToast("⚡ Stage 1/3: Connecting to IMAP mailboxes...", "loading", true);
 
-  const stageTimer = setTimeout(() => {
-    if (loadingToast) loadingToast.update("⚡ Stage 2/3: Extracting task candidates with AI...", "loading");
-  }, 1000);
-
   try {
-    const res = await fetch("/api/inbox/sample-ingest", { method: "POST" });
-    clearTimeout(stageTimer);
-    const data = await res.json();
-
-    if (res.ok) {
-      if (loadingToast) {
-        loadingToast.update("⚡ Stage 3/3: Finalizing inbox update...", "loading");
-        setTimeout(() => {
-          loadingToast.dismiss();
-          showToast(data.message, "success");
-          loadCandidates();
-        }, 500);
-      } else {
-        showToast(data.message, "success");
-        loadCandidates();
-      }
-    } else {
+    const startRes = await fetch("/api/inbox/sample-ingest/start", { method: "POST" });
+    const startData = await startRes.json();
+    if (!startRes.ok || !startData.job_id) {
       if (loadingToast) loadingToast.dismiss();
-      showToast(data.detail || "No connected email accounts found. Please add an account first in Connected Accounts tab.", "error");
-      switchTab("accounts");
+      showToast(startData.detail || "Failed to start sync job.", "error");
+      return;
     }
+
+    const wsProto = window.location.protocol === "https:" ? "wss" : "ws";
+    const wsUrl = `${wsProto}://${window.location.host}/api/inbox/ws/sample-ingest/${startData.job_id}`;
+    const ws = new WebSocket(wsUrl);
+
+    let finished = false;
+
+    ws.onmessage = (evt) => {
+      let payload = null;
+      try {
+        payload = JSON.parse(evt.data);
+      } catch (err) {
+        return;
+      }
+
+      if (payload.message && loadingToast) {
+        loadingToast.update(payload.message, "loading");
+      }
+
+      if (payload.status === "completed") {
+        finished = true;
+        if (loadingToast) {
+          loadingToast.update("⚡ Stage 3/3: Ready for review and Notion sync...", "success");
+          setTimeout(() => loadingToast.dismiss(), 700);
+        }
+        showToast(payload.message || "Sync finished", "success");
+        loadCandidates();
+        ws.close();
+      }
+
+      if (payload.status === "failed") {
+        finished = true;
+        if (loadingToast) loadingToast.dismiss();
+        showToast(payload.message || "Sync failed", "error");
+        if ((payload.message || "").includes("No connected email accounts")) {
+          switchTab("accounts");
+        }
+        ws.close();
+      }
+    };
+
+    ws.onerror = () => {
+      if (finished) return;
+      if (loadingToast) loadingToast.dismiss();
+      showToast("Sync connection error. Please try again.", "error");
+    };
+
+    ws.onclose = () => {
+      if (finished) return;
+      if (loadingToast) loadingToast.dismiss();
+      showToast("Sync connection closed before completion.", "error");
+    };
   } catch (err) {
-    clearTimeout(stageTimer);
     if (loadingToast) loadingToast.dismiss();
     showToast(`Error: ${err.message}`, "error");
   }
@@ -774,15 +871,24 @@ async function addAccount() {
 }
 
 async function syncAccount(accId) {
-  showToast("Syncing IMAP mailbox...", "info");
+  const syncToast = showToast("⏳ Sync in progress: fetching emails from IMAP mailbox...", "loading", true);
   try {
     const res = await fetch(`/api/accounts/${accId}/sync`, { method: "POST" });
     const data = await res.json();
     if (res.ok) {
-      showToast(data.message, "success");
+      if (syncToast) {
+        syncToast.update(data.message || "Sync finished successfully.", "success");
+        setTimeout(() => syncToast.dismiss(), 1200);
+      } else {
+        showToast(data.message, "success");
+      }
       loadCandidates();
+    } else {
+      if (syncToast) syncToast.dismiss();
+      showToast(data.detail || "Sync failed", "error");
     }
   } catch (err) {
+    if (syncToast) syncToast.dismiss();
     showToast(`Error: ${err.message}`, "error");
   }
 }

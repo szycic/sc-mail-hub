@@ -1,6 +1,24 @@
 from sqlalchemy import create_engine, text
+from sqlalchemy.engine import make_url
 from sqlalchemy.orm import sessionmaker, declarative_base
+from pathlib import Path
 from sc_mail_hub.config import settings
+
+
+def _ensure_sqlite_parent_dir(database_url: str) -> None:
+    parsed = make_url(database_url)
+    if not parsed.drivername.startswith("sqlite"):
+        return
+
+    # In-memory sqlite DB does not map to a filesystem path.
+    db_file = parsed.database
+    if not db_file or db_file == ":memory:":
+        return
+
+    Path(db_file).expanduser().parent.mkdir(parents=True, exist_ok=True)
+
+
+_ensure_sqlite_parent_dir(settings.DATABASE_URL)
 
 # SQLite configuration requires check_same_thread=False for multithreaded FastAPI requests
 connect_args = {"check_same_thread": False} if settings.DATABASE_URL.startswith("sqlite") else {}
@@ -19,11 +37,18 @@ def init_db():
     from sc_mail_hub import models  # Ensure models are loaded
     Base.metadata.create_all(bind=engine)
     with engine.connect() as conn:
-        try:
-            conn.execute(text("ALTER TABLE task_candidates ADD COLUMN start_date VARCHAR(100)"))
-            conn.commit()
-        except Exception:
-            pass
+        migrations = [
+            "ALTER TABLE task_candidates ADD COLUMN start_date VARCHAR(100)",
+            "ALTER TABLE email_accounts ADD COLUMN last_uid INTEGER",
+            "ALTER TABLE email_accounts ADD COLUMN uid_validity VARCHAR(64)",
+            "ALTER TABLE email_messages ADD COLUMN email_uid INTEGER",
+        ]
+        for sql in migrations:
+            try:
+                conn.execute(text(sql))
+                conn.commit()
+            except Exception:
+                pass
 
 def get_db():
     db = SessionLocal()

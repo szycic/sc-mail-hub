@@ -1,11 +1,12 @@
 import imaplib
 import email
 from email.header import decode_header
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import json
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
 from sc_mail_hub.models import EmailAccount, EmailMessage
+from sc_mail_hub.config import settings
 
 # Preset demo sample emails for rapid testing matching user request diagram
 SAMPLE_EMAILS = [
@@ -83,7 +84,7 @@ class EmailService:
 
     @staticmethod
     def fetch_from_imap(account: EmailAccount, db: Session) -> List[EmailMessage]:
-        """Fetch unread/recent emails via IMAP protocol for Gmail/Zoho/Generic IMAP."""
+        """Fetch emails incrementally via IMAP UID regardless of read/unread state."""
         if not account.credentials_json:
             return []
         
@@ -101,19 +102,46 @@ class EmailService:
             return []
 
         fetched_messages = []
+        mail = None
         try:
-            mail = imaplib.IMAP4_SSL(host, port)
+            mail = imaplib.IMAP4_SSL(host, port, timeout=settings.IMAP_SOCKET_TIMEOUT_SECONDS)
             mail.login(username, password)
-            mail.select("inbox")
-
-            status, response = mail.search(None, "UNSEEN")
+            status, _ = mail.select("inbox")
             if status != "OK":
                 mail.logout()
                 return []
 
-            email_ids = response[0].split()
-            for e_id in email_ids[-15:]:
-                res, msg_data = mail.fetch(e_id, "(RFC822)")
+            current_uid_validity = EmailService._get_uid_validity(mail)
+            if account.uid_validity and current_uid_validity and account.uid_validity != current_uid_validity:
+                account.last_uid = None
+
+            if account.last_uid is not None:
+                search_clause = f"UID {max(1, int(account.last_uid) + 1)}:*"
+            else:
+                since_date = (datetime.now(timezone.utc) - timedelta(days=max(1, settings.IMAP_INITIAL_LOOKBACK_DAYS))).strftime("%d-%b-%Y")
+                search_clause = f'SINCE "{since_date}"'
+
+            status, response = mail.uid("search", None, search_clause)
+            if status != "OK":
+                mail.logout()
+                return []
+
+            uid_tokens = response[0].split() if response and response[0] else []
+            if len(uid_tokens) > settings.IMAP_MAX_FETCH_PER_SYNC:
+                uid_tokens = uid_tokens[-settings.IMAP_MAX_FETCH_PER_SYNC:]
+
+            max_seen_uid = int(account.last_uid or 0)
+
+            for uid_token in uid_tokens:
+                uid_str = uid_token.decode("utf-8", errors="ignore")
+                try:
+                    uid_int = int(uid_str)
+                except Exception:
+                    continue
+
+                max_seen_uid = max(max_seen_uid, uid_int)
+
+                res, msg_data = mail.uid("fetch", uid_str, "(RFC822)")
                 if res != "OK":
                     continue
                 for response_part in msg_data:
@@ -121,7 +149,7 @@ class EmailService:
                         msg = email.message_from_bytes(response_part[1])
                         subject = EmailService._decode_header_str(msg["Subject"])
                         sender = EmailService._decode_header_str(msg["From"])
-                        msg_id = msg.get("Message-ID", f"imap-{e_id.decode('utf-8')}")
+                        msg_id = msg.get("Message-ID", f"imap-{account.id}-{uid_str}")
 
                         body = ""
                         if msg.is_multipart():
@@ -152,6 +180,7 @@ class EmailService:
                         if not existing:
                             email_record = EmailMessage(
                                 account_id=account.id,
+                                email_uid=uid_int,
                                 message_id=msg_id,
                                 sender=sender,
                                 recipient=account.email_address,
@@ -162,14 +191,35 @@ class EmailService:
                             )
                             db.add(email_record)
                             fetched_messages.append(email_record)
+                        elif existing.account_id == account.id and not existing.email_uid:
+                            existing.email_uid = uid_int
             
-            mail.logout()
+            if current_uid_validity:
+                account.uid_validity = current_uid_validity
+            if max_seen_uid > 0:
+                account.last_uid = max_seen_uid
             account.last_synced_at = datetime.now(timezone.utc)
             db.commit()
         except Exception as err:
             print(f"Error fetching IMAP for {account.email_address}: {err}")
+        finally:
+            if mail:
+                try:
+                    mail.logout()
+                except Exception:
+                    pass
         
         return fetched_messages
+
+    @staticmethod
+    def _get_uid_validity(mail: imaplib.IMAP4_SSL) -> Optional[str]:
+        try:
+            typ, data = mail.response("UIDVALIDITY")
+            if typ == "UIDVALIDITY" and data and data[0]:
+                return data[0].decode("utf-8", errors="ignore")
+        except Exception:
+            pass
+        return None
 
     @staticmethod
     def _decode_header_str(header_val: str) -> str:
