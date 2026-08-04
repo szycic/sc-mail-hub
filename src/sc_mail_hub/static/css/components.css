@@ -261,3 +261,136 @@
   from { transform: translateX(100%); opacity: 0; }
   to { transform: translateX(0); opacity: 1; }
 }
+
+/* Pagination Component */
+.pagination-container {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 20px;
+  padding: 12px 18px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.pagination-info {
+  font-size: 13px;
+  color: var(--text-dim);
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pagination-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.pagination-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  height: 34px;
+  padding: 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-color);
+  color: var(--text-main);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.pagination-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: var(--border-highlight);
+  color: #ffffff;
+}
+
+.pagination-btn.active {
+  background: var(--accent-primary);
+  border-color: var(--accent-primary);
+  color: #ffffff;
+  box-shadow: 0 0 12px rgba(59, 130, 246, 0.4);
+}
+
+.pagination-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.pagination-ellipsis {
+  font-size: 13px;
+  color: var(--text-dim);
+  padding: 0 4px;
+}
+
+/* Responsive Component Styles */
+@media (max-width: 680px) {
+  .candidate-card {
+    padding: 16px 14px;
+    border-radius: 10px;
+  }
+
+  .candidate-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .candidate-title {
+    font-size: 15px;
+  }
+
+  .candidate-meta div {
+    word-break: break-word;
+  }
+
+  .candidate-actions {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .candidate-actions .btn,
+  .candidate-actions a {
+    width: 100%;
+    justify-content: center;
+    text-align: center;
+    padding: 10px 14px;
+  }
+
+  .pagination-container {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: 10px 12px;
+  }
+
+  .pagination-controls {
+    justify-content: center;
+  }
+
+  #toast-container {
+    left: 10px;
+    right: 10px;
+    bottom: 12px;
+    width: auto;
+  }
+
+  .toast {
+    width: 100%;
+    font-size: 13px;
+    padding: 12px 14px;
+  }
+}
+
+

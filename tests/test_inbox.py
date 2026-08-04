@@ -37,9 +37,11 @@ def test_sample_ingest_and_inbox():
 
 def test_ignore_candidate():
     inbox_res = client.get("/api/inbox/candidates?status=PENDING")
-    candidates = inbox_res.json()
+    res_data = inbox_res.json()
+    candidates = res_data.get("items", []) if isinstance(res_data, dict) else res_data
     if candidates:
         cand_id = candidates[0]["id"]
         ignore_res = client.post(f"/api/inbox/candidates/{cand_id}/ignore")
         assert ignore_res.status_code == 200
         assert ignore_res.json()["message"] == "Task candidate marked as ignored"
+

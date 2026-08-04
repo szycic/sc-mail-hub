@@ -50,6 +50,16 @@ class TaskCandidateOut(TaskCandidateBase):
     model_config = ConfigDict(from_attributes=True)
 
 
+class PaginatedTaskCandidates(BaseModel):
+    """Response payload representing paginated task candidate cards."""
+    items: List[TaskCandidateOut]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
+
+
+
 # --- Email Account Schemas ---
 class EmailAccountCreate(BaseModel):
     """Request payload for connecting a new IMAP email account."""

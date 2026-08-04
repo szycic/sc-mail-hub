@@ -164,6 +164,8 @@ async function fillTaskReviewForm(candidate) {
   if (deadlineInput) deadlineInput.value = formatDateForPicker(candidate.deadline);
 
   updatePriorityDropdownInModal(candidate);
+  switchReviewModalTab('form');
+
 
   // Populate Right Column: Original Email Reference with Link Highlighting
   const senderEl = document.getElementById("review-email-sender");
@@ -203,11 +205,33 @@ async function fillTaskReviewForm(candidate) {
   }
 }
 
+function switchReviewModalTab(tab) {
+  const formPane = document.getElementById("review-form-pane");
+  const emailPane = document.getElementById("review-email-pane");
+  const btnForm = document.getElementById("btn-review-tab-form");
+  const btnEmail = document.getElementById("btn-review-tab-email");
+
+  if (!formPane || !emailPane) return;
+
+  if (tab === "email") {
+    formPane.classList.add("mobile-hidden");
+    emailPane.classList.remove("mobile-hidden");
+    if (btnForm) btnForm.classList.remove("active");
+    if (btnEmail) btnEmail.classList.add("active");
+  } else {
+    formPane.classList.remove("mobile-hidden");
+    emailPane.classList.add("mobile-hidden");
+    if (btnForm) btnForm.classList.add("active");
+    if (btnEmail) btnEmail.classList.remove("active");
+  }
+}
+
 function closeTaskReviewModal(e) {
   if (e && e.target && e.target !== e.currentTarget) return;
   const modal = document.getElementById("task-review-modal");
   if (modal) modal.classList.remove("active");
 }
+
 
 async function submitReviewedTaskToNotion() {
   const candidateId = Number(document.getElementById("review-candidate-id")?.value || 0);

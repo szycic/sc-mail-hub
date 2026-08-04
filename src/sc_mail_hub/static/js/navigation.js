@@ -31,20 +31,42 @@ function getTabFromPath() {
   return "inbox";
 }
 
+function toggleMobileMenu(forceState) {
+  const navTabs = document.getElementById("nav-tabs");
+  const backdrop = document.getElementById("nav-drawer-backdrop");
+  if (!navTabs || !backdrop) return;
+
+  const isOpen = navTabs.classList.contains("drawer-open");
+  const shouldOpen = forceState !== undefined ? forceState : !isOpen;
+
+  if (shouldOpen) {
+    navTabs.classList.add("drawer-open");
+    backdrop.classList.add("active");
+    document.body.style.overflow = "hidden";
+  } else {
+    navTabs.classList.remove("drawer-open");
+    backdrop.classList.remove("active");
+    document.body.style.overflow = "";
+  }
+}
+
 function initTabs() {
   const tabs = document.querySelectorAll(".nav-tab");
   tabs.forEach(tab => {
     tab.addEventListener("click", () => {
       const target = tab.getAttribute("data-tab");
       switchTab(target, true);
+      toggleMobileMenu(false);
     });
   });
 
   window.addEventListener("popstate", (e) => {
     const tab = (e.state && e.state.tab) || getTabFromPath();
     switchTab(tab, false);
+    toggleMobileMenu(false);
   });
 
   const initialTab = getTabFromPath();
   switchTab(initialTab, false);
 }
+

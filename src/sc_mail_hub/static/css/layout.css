@@ -86,6 +86,18 @@ body {
   font-size: 14px;
 }
 
+.mobile-menu-btn {
+  display: none;
+}
+
+.drawer-header {
+  display: none;
+}
+
+.nav-drawer-backdrop {
+  display: none;
+}
+
 .nav-tabs {
   display: flex;
   gap: 8px;
@@ -95,6 +107,7 @@ body {
   border-radius: var(--radius);
   border: 1px solid var(--border-color);
 }
+
 
 .nav-tab {
   flex: 1;
@@ -207,60 +220,176 @@ body {
   opacity: 0.5;
 }
 
+/* Form Responsive Grid Helpers */
+.form-grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.form-grid-3 {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 12px;
+}
+
+.form-grid-3-alt {
+  display: grid;
+  grid-template-columns: 2fr 2fr 1fr;
+  gap: 12px;
+}
+
 /* Responsive Media Queries */
 @media (max-width: 768px) {
   .app-container {
-    padding: 16px 12px 40px 12px;
+    padding: 14px 10px 40px 10px;
   }
 
   .app-header {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 16px;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding-bottom: 14px;
+    margin-bottom: 20px;
   }
 
-  .pipeline-badge {
-    width: 100%;
+  .mobile-menu-btn {
+    display: flex;
+    align-items: center;
     justify-content: center;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--border-color);
+    color: var(--text-main);
+    border-radius: 8px;
+    width: 40px;
+    height: 40px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .mobile-menu-btn:hover {
+    background: rgba(255, 255, 255, 0.12);
+    border-color: var(--border-highlight);
+  }
+
+  .brand-title {
+    font-size: 19px;
+  }
+
+  .brand-subtitle {
+    font-size: 11px;
+  }
+
+  .nav-drawer-backdrop {
+    display: block;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.75);
+    backdrop-filter: blur(4px);
+    z-index: 9998;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+  }
+
+  .nav-drawer-backdrop.active {
+    opacity: 1;
+    pointer-events: auto;
   }
 
   .nav-tabs {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 270px;
+    max-width: 82vw;
+    height: 100vh;
+    z-index: 9999;
+    background: var(--bg-card);
+    border-right: 1px solid var(--border-highlight);
+    box-shadow: 0 0 30px rgba(0, 0, 0, 0.7);
     flex-direction: column;
-    gap: 6px;
+    padding: 20px 14px;
+    gap: 8px;
+    transform: translateX(-100%);
+    transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+    overflow-y: auto;
+    border-radius: 0;
+    margin-bottom: 0;
+    border: none;
+  }
+
+  .nav-tabs.drawer-open {
+    transform: translateX(0);
+  }
+
+  .drawer-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 14px;
+    margin-bottom: 12px;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .drawer-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text-main);
+  }
+
+  .drawer-close-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 24px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 2px 8px;
+    border-radius: 6px;
+  }
+
+  .drawer-close-btn:hover {
+    color: #ffffff;
+    background: rgba(255, 255, 255, 0.1);
   }
 
   .nav-tab {
+    flex: none;
     width: 100%;
     justify-content: flex-start;
-    padding: 10px 14px;
+    padding: 12px 16px;
+    font-size: 14px;
+    border-radius: var(--radius-sm);
   }
 
-  .candidate-header {
+  .card {
+    padding: 16px 14px;
+    border-radius: 12px;
+  }
+
+  .card-title {
+    font-size: 16px;
     flex-direction: column;
     align-items: flex-start;
-    gap: 10px;
+    gap: 8px;
   }
 
-  .candidate-actions {
-    flex-direction: column;
-    align-items: stretch;
-    width: 100%;
-  }
 
-  .candidate-actions .btn,
-  .candidate-actions a {
-    width: 100%;
-    text-align: center;
-    justify-content: center;
-  }
-
-  #toast-container {
-    left: 12px;
-    right: 12px;
-    bottom: 16px;
-  }
-
-  .toast {
-    width: 100%;
+  .empty-state {
+    padding: 32px 14px;
   }
 }
+
+@media (max-width: 680px) {
+  .form-grid-2,
+  .form-grid-3,
+  .form-grid-3-alt {
+    grid-template-columns: 1fr;
+  }
+}
+

@@ -4,10 +4,22 @@
 
 let currentCandidates = [];
 let currentStatusFilter = "PENDING";
+let currentPage = 1;
+let pageSize = 10;
+let totalCandidates = 0;
+let totalPages = 1;
 
-async function loadCandidates(statusFilter) {
-  if (statusFilter) currentStatusFilter = statusFilter;
+async function loadCandidates(statusFilter, page) {
+  if (statusFilter) {
+    currentStatusFilter = statusFilter;
+    currentPage = 1;
+  }
+  if (page !== undefined && page !== null) {
+    currentPage = page;
+  }
+
   const listEl = document.getElementById("candidates-list");
+  const pagEl = document.getElementById("inbox-pagination");
   if (!listEl) return;
 
   const accountFilter = document.getElementById("filter-account")?.value || "ALL";
@@ -30,15 +42,31 @@ async function loadCandidates(statusFilter) {
     if (sortBy) {
       params.append("sort_by", sortBy);
     }
+    params.append("page", currentPage);
+    params.append("page_size", pageSize);
 
     const url = `/api/inbox/candidates?${params.toString()}`;
     const res = await fetch(url);
     if (!res.ok) throw new Error("Failed to fetch candidates");
 
-    currentCandidates = await res.json();
+    const data = await res.json();
+    if (Array.isArray(data)) {
+      currentCandidates = data;
+      totalCandidates = data.length;
+      totalPages = 1;
+      currentPage = 1;
+    } else {
+      currentCandidates = data.items || [];
+      totalCandidates = data.total || 0;
+      totalPages = data.total_pages || 1;
+      currentPage = data.page || 1;
+    }
+
     renderCandidates(currentCandidates);
+    renderPagination();
   } catch (err) {
     if (listEl) listEl.innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div>Error loading candidates: ${err.message}</div>`;
+    if (pagEl) pagEl.innerHTML = "";
   }
 }
 
@@ -272,5 +300,89 @@ function filterInbox(status) {
   document.querySelectorAll(".inbox-filter-btn").forEach(b => b.classList.remove("active"));
   const btn = document.getElementById(`filter-btn-${status}`);
   if (btn) btn.classList.add("active");
-  loadCandidates(status);
+  loadCandidates(status, 1);
 }
+
+function changePage(newPage) {
+  if (newPage < 1 || newPage > totalPages || newPage === currentPage) return;
+  loadCandidates(null, newPage);
+}
+
+function changePageSize(newSize) {
+  pageSize = parseInt(newSize, 10) || 10;
+  currentPage = 1;
+  loadCandidates();
+}
+
+function renderPagination() {
+  const pagEl = document.getElementById("inbox-pagination");
+  if (!pagEl) return;
+
+  if (totalCandidates === 0) {
+    pagEl.innerHTML = "";
+    pagEl.style.display = "none";
+    return;
+  }
+
+  pagEl.style.display = "flex";
+
+  const startItem = (currentPage - 1) * pageSize + 1;
+  const endItem = Math.min(currentPage * pageSize, totalCandidates);
+
+  let pageButtonsHtml = "";
+
+  const createBtn = (p, label = p, isActive = false, isDisabled = false) => `
+    <button class="pagination-btn ${isActive ? 'active' : ''}" 
+      ${isDisabled ? 'disabled' : ''} 
+      onclick="changePage(${p})">${label}</button>
+  `;
+
+  pageButtonsHtml += createBtn(currentPage - 1, '‹', false, currentPage <= 1);
+
+  const maxVisiblePages = 5;
+  let startPage = Math.max(1, currentPage - 2);
+  let endPage = Math.min(totalPages, startPage + maxVisiblePages - 1);
+
+  if (endPage - startPage < maxVisiblePages - 1) {
+    startPage = Math.max(1, endPage - maxVisiblePages + 1);
+  }
+
+  if (startPage > 1) {
+    pageButtonsHtml += createBtn(1, 1, currentPage === 1);
+    if (startPage > 2) {
+      pageButtonsHtml += `<span class="pagination-ellipsis">…</span>`;
+    }
+  }
+
+  for (let p = startPage; p <= endPage; p++) {
+    pageButtonsHtml += createBtn(p, p, p === currentPage);
+  }
+
+  if (endPage < totalPages) {
+    if (endPage < totalPages - 1) {
+      pageButtonsHtml += `<span class="pagination-ellipsis">…</span>`;
+    }
+    pageButtonsHtml += createBtn(totalPages, totalPages, currentPage === totalPages);
+  }
+
+  pageButtonsHtml += createBtn(currentPage + 1, '›', false, currentPage >= totalPages);
+
+  pagEl.innerHTML = `
+    <div class="pagination-info">
+      Showing <strong>${startItem}-${endItem}</strong> of <strong>${totalCandidates}</strong> candidate${totalCandidates !== 1 ? 's' : ''}
+      <span style="margin-left:8px; display:inline-flex; align-items:center; gap:6px;">
+        | Show: 
+        <select class="select-input" style="padding:2px 6px; font-size:12px; width:auto;" onchange="changePageSize(this.value)">
+          <option value="10" ${pageSize === 10 ? 'selected' : ''}>10</option>
+          <option value="25" ${pageSize === 25 ? 'selected' : ''}>25</option>
+          <option value="50" ${pageSize === 50 ? 'selected' : ''}>50</option>
+          <option value="100" ${pageSize === 100 ? 'selected' : ''}>100</option>
+        </select>
+      </span>
+    </div>
+    <div class="pagination-controls">
+      ${pageButtonsHtml}
+    </div>
+  `;
+}
+

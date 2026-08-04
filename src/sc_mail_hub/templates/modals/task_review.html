@@ -15,10 +15,20 @@
       <button class="modal-close-btn" onclick="closeTaskReviewModal()">&times;</button>
     </div>
 
-    <div class="modal-body"
-      style="display:grid; grid-template-columns: 1fr 1fr; gap:20px; overflow-y:auto; padding:20px;">
+    <!-- Mobile Sub-navigation Tabs for Review Modal -->
+    <div class="review-modal-tabs" id="review-modal-tabs">
+      <button class="review-modal-tab active" id="btn-review-tab-form" onclick="switchReviewModalTab('form')">
+        ✏️ Task Details
+      </button>
+      <button class="review-modal-tab" id="btn-review-tab-email" onclick="switchReviewModalTab('email')">
+        📧 Original Email
+      </button>
+    </div>
+
+    <div class="modal-body review-modal-grid">
       <!-- Left Column: Task Review Form -->
-      <div style="display:flex; flex-direction:column; gap:14px; border-right:1px solid rgba(255,255,255,0.08); padding-right:20px;">
+      <div class="review-form-pane" id="review-form-pane">
+
         <input type="hidden" id="review-candidate-id">
 
         <div>
@@ -26,8 +36,8 @@
           <input id="review-title" class="text-input" type="text" maxlength="255" style="font-weight:600; font-size:14px;">
         </div>
 
-        <!-- Single row for Priority, Start Date, and Deadline -->
-        <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:10px;">
+        <!-- Single row on desktop, stacked on mobile for Priority, Start Date, and Deadline -->
+        <div class="form-grid-3">
           <div>
             <label style="display:block; font-size:12px; color:var(--text-muted); font-weight:600; margin-bottom:6px;">Priority</label>
             <select id="review-priority" class="select-input" style="font-weight:600;">
@@ -60,17 +70,19 @@
       </div>
 
       <!-- Right Column: Original Email Message Reference -->
-      <div style="display:flex; flex-direction:column; gap:12px; overflow-y:auto;">
+      <div class="review-email-pane" id="review-email-pane">
+
         <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">
-          <h4 style="margin:0; font-size:14px; font-weight:600; color:var(--text-main);">Original Email Message</h4>
+          <h4 style="margin:0; font-size:14px; font-weight:600; color:var(--text-main);">📧 Original Email Message</h4>
         </div>
         <div style="font-size:13px; color:var(--text-muted); margin-bottom:6px;">
           ✉️ <i id="review-email-subject" style="color:var(--text-main);"></i>
         </div>
-        <div id="review-email-body"
-          style="white-space:pre-wrap; font-family:inherit; font-size:14px; color:var(--text-main); line-height:1.6; background:rgba(0,0,0,0.2); padding:16px; border-radius:var(--radius-sm); border:1px solid rgba(255,255,255,0.06); max-height:400px; overflow-y:auto;">
+        <div id="review-email-body" class="review-email-body-box">
         </div>
       </div>
+
+
     </div>
 
     <div class="modal-footer">

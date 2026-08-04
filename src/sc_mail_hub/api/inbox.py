@@ -11,12 +11,12 @@ from sqlalchemy.orm import Session
 from typing import Dict, List, Optional
 from sc_mail_hub.database import get_db, SessionLocal
 from sc_mail_hub.models import TaskCandidate, EmailMessage, EmailAccount
-from sc_mail_hub.schemas import TaskCandidateOut, TaskCandidateUpdate
+from sc_mail_hub.schemas import TaskCandidateOut, TaskCandidateUpdate, PaginatedTaskCandidates
 from sc_mail_hub.services.email_service import EmailService
 from sc_mail_hub.services.ai_service import AIService
 from sc_mail_hub.services.notion_service import NotionService
 
-router = APIRouter(prefix="/api/inbox", tags=["AI Inbox"])
+router = APIRouter(prefix="/api/inbox", tags=["Inbox"])
 INGEST_JOB_QUEUES: Dict[str, asyncio.Queue] = {}
 
 
@@ -121,12 +121,14 @@ async def sample_ingest_progress_ws(websocket: WebSocket, job_id: str):
     finally:
         INGEST_JOB_QUEUES.pop(job_id, None)
 
-@router.get("/candidates", response_model=List[TaskCandidateOut])
+@router.get("/candidates", response_model=PaginatedTaskCandidates)
 def get_candidates(
     status: Optional[str] = Query(None, description="Filter by status e.g. PENDING, CREATED, IGNORED, ALL"),
     account_id: Optional[str] = Query(None, description="Filter by connected account ID or ALL"),
     recipient_type: Optional[str] = Query(None, description="Filter by recipient type e.g. DIRECT, MAILING_GROUP, ALL"),
     sort_by: Optional[str] = Query("NEWEST", description="Sort order e.g. NEWEST, OLDEST, DIRECT_FIRST, GROUP_FIRST"),
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(10, ge=1, le=100, description="Items per page"),
     db: Session = Depends(get_db)
 ):
     query = db.query(TaskCandidate)
@@ -142,9 +144,21 @@ def get_candidates(
 
     candidates = query.all()
 
+    email_ids = [c.email_id for c in candidates if c.email_id]
+    emails_by_id = {}
+    accounts_by_id = {}
+    if email_ids:
+        email_msgs = db.query(EmailMessage).filter(EmailMessage.id.in_(email_ids)).all()
+        emails_by_id = {msg.id: msg for msg in email_msgs}
+        acc_ids = [msg.account_id for msg in email_msgs if msg.account_id]
+        if acc_ids:
+            accounts = db.query(EmailAccount).filter(EmailAccount.id.in_(acc_ids)).all()
+            accounts_by_id = {acc.id: acc for acc in accounts}
+
     result = []
+    import re
     for c in candidates:
-        email_msg = db.query(EmailMessage).filter(EmailMessage.id == c.email_id).first() if c.email_id else None
+        email_msg = emails_by_id.get(c.email_id) if c.email_id else None
         out = TaskCandidateOut.model_validate(c)
         if email_msg:
             out.sender = email_msg.sender
@@ -153,7 +167,7 @@ def get_candidates(
             if email_msg.received_at:
                 out.received_at = email_msg.received_at.strftime("%d %b %Y, %H:%M")
 
-            acc = db.query(EmailAccount).filter(EmailAccount.id == email_msg.account_id).first() if email_msg.account_id else None
+            acc = accounts_by_id.get(email_msg.account_id) if email_msg.account_id else None
             account_email = acc.email_address if acc else ""
             out.account_email = account_email
 
@@ -192,7 +206,19 @@ def get_candidates(
     else:
         result.sort(key=lambda item: -item.id)
 
-    return result
+    total = len(result)
+    total_pages = (total + page_size - 1) // page_size if total > 0 else 1
+    start_idx = (page - 1) * page_size
+    end_idx = start_idx + page_size
+    paginated_items = result[start_idx:end_idx]
+
+    return PaginatedTaskCandidates(
+        items=paginated_items,
+        total=total,
+        page=page,
+        page_size=page_size,
+        total_pages=total_pages
+    )
 
 @router.get("/candidates/{candidate_id}/email")
 def get_candidate_email_preview(candidate_id: int, db: Session = Depends(get_db)):

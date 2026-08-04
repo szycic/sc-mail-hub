@@ -34,7 +34,7 @@ class EmailMessage(Base):
     __tablename__ = "email_messages"
 
     id = Column(Integer, primary_key=True, index=True)
-    account_id = Column(Integer, ForeignKey("email_accounts.id"), nullable=True)
+    account_id = Column(Integer, ForeignKey("email_accounts.id"), nullable=True, index=True)
     email_uid = Column(Integer, nullable=True)
     message_id = Column(String(255), index=True, nullable=True)
     sender = Column(String(255), nullable=False)
@@ -60,7 +60,7 @@ class TaskCandidate(Base):
     __tablename__ = "task_candidates"
 
     id = Column(Integer, primary_key=True, index=True)
-    email_id = Column(Integer, ForeignKey("email_messages.id"), nullable=True)
+    email_id = Column(Integer, ForeignKey("email_messages.id"), nullable=True, index=True)
     title = Column(String(255), nullable=False)
     summary = Column(Text, nullable=True)
     is_task = Column(Boolean, default=True)
@@ -69,7 +69,7 @@ class TaskCandidate(Base):
     deadline = Column(String(100), nullable=True)       # ISO YYYY-MM-DD or formatted due date string
     source_url = Column(String(500), nullable=True)     # Extracted HTTP/HTTPS URL from email message body
     project = Column(String(100), nullable=True)        # e.g. "ESN Poland"
-    status = Column(String(20), default="PENDING")      # 'PENDING', 'AI_PROCESSED', 'CREATED', 'IGNORED'
+    status = Column(String(20), default="PENDING", index=True)      # 'PENDING', 'AI_PROCESSED', 'CREATED', 'IGNORED'
     previous_status = Column(String(20), nullable=True) # Tracks exact stage prior to IGNORED status for unignoring
     notion_page_id = Column(String(255), nullable=True)
     notion_url = Column(String(500), nullable=True)
