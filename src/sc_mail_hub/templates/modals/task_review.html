@@ -1,0 +1,80 @@
+<div id="task-review-modal" class="modal-overlay" onclick="closeTaskReviewModal(event)">
+  <div class="modal-card" onclick="event.stopPropagation()"
+    style="max-width: 1050px; width: 94vw; max-height: 90vh; display: flex; flex-direction: column;">
+    <div class="modal-header">
+      <div>
+        <span class="type-pill" style="margin-bottom:6px; display:inline-block;">📝 Review Task Candidate</span>
+        <h3 id="review-modal-title" style="font-size:18px; color:var(--text-main); margin-bottom:4px;">Task Review & Email Reference</h3>
+        <div style="font-size:13px; color:var(--text-muted); display:flex; gap:16px; flex-wrap:wrap;">
+          <span>📧 From: <strong id="review-email-sender" style="color:var(--text-main);"></strong></span>
+          <span>📥 To: <span id="review-email-recipient" style="color:var(--text-main);"></span></span>
+          <span>📩 Received: <span id="review-email-received"></span></span>
+        </div>
+      </div>
+      <button class="modal-close-btn" onclick="closeTaskReviewModal()">&times;</button>
+    </div>
+
+    <div class="modal-body"
+      style="display:grid; grid-template-columns: 1fr 1fr; gap:20px; overflow-y:auto; padding:20px;">
+      <!-- Left Column: Task Review Form -->
+      <div style="display:flex; flex-direction:column; gap:14px; border-right:1px solid rgba(255,255,255,0.08); padding-right:20px;">
+        <input type="hidden" id="review-candidate-id">
+
+        <div>
+          <label style="display:block; font-size:12px; color:var(--text-muted); font-weight:600; margin-bottom:6px;">Task Title</label>
+          <input id="review-title" class="text-input" type="text" maxlength="255" style="font-weight:600; font-size:14px;">
+        </div>
+
+        <!-- Single row for Priority, Start Date, and Deadline -->
+        <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:10px;">
+          <div>
+            <label style="display:block; font-size:12px; color:var(--text-muted); font-weight:600; margin-bottom:6px;">Priority</label>
+            <select id="review-priority" class="select-input" style="font-weight:600;">
+              <option value="HIGH">HIGH</option>
+              <option value="MEDIUM">MEDIUM</option>
+              <option value="LOW">LOW</option>
+            </select>
+          </div>
+          <div>
+            <label style="display:block; font-size:12px; color:var(--text-muted); font-weight:600; margin-bottom:6px;">Start Date</label>
+            <input id="review-start-date" class="text-input" type="date">
+          </div>
+          <div>
+            <label style="display:block; font-size:12px; color:var(--text-muted); font-weight:600; margin-bottom:6px;">Deadline</label>
+            <input id="review-deadline" class="text-input" type="date">
+          </div>
+        </div>
+
+        <!-- Description -->
+        <div>
+          <label style="display:block; font-size:12px; color:var(--text-muted); font-weight:600; margin-bottom:6px;">Description</label>
+          <textarea id="review-summary" class="text-input" rows="5" style="resize:vertical; line-height:1.6; font-size:13px;"></textarea>
+        </div>
+
+        <!-- Link full width below summary -->
+        <div>
+          <label style="display:block; font-size:12px; color:var(--text-muted); font-weight:600; margin-bottom:6px;">Link</label>
+          <input id="review-url" class="text-input" type="url" placeholder="e.g. https://example.com/link" oninput="updateEmailBodyLinkHighlight()" style="width:100%;">
+        </div>
+      </div>
+
+      <!-- Right Column: Original Email Message Reference -->
+      <div style="display:flex; flex-direction:column; gap:12px; overflow-y:auto;">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">
+          <h4 style="margin:0; font-size:14px; font-weight:600; color:var(--text-main);">Original Email Message</h4>
+        </div>
+        <div style="font-size:13px; color:var(--text-muted); margin-bottom:6px;">
+          ✉️ <i id="review-email-subject" style="color:var(--text-main);"></i>
+        </div>
+        <div id="review-email-body"
+          style="white-space:pre-wrap; font-family:inherit; font-size:14px; color:var(--text-main); line-height:1.6; background:rgba(0,0,0,0.2); padding:16px; border-radius:var(--radius-sm); border:1px solid rgba(255,255,255,0.06); max-height:400px; overflow-y:auto;">
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-outline btn-sm" onclick="closeTaskReviewModal()">Cancel</button>
+      <button class="btn btn-success btn-sm" onclick="submitReviewedTaskToNotion()" style="font-weight:600;">Confirm</button>
+    </div>
+  </div>
+</div>

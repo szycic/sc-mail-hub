@@ -1,0 +1,68 @@
+<section id="tab-notion" class="tab-content">
+  <div class="card">
+    <div class="card-title">
+      <span>Notion Integration Configuration</span>
+      <div id="notion-status-badge"></div>
+    </div>
+    <p style="font-size:14px; color:var(--text-muted); margin-bottom:16px;">
+      Provide your Notion Integration Secret and Database ID. The system will inspect your Notion database
+      properties in real time to allow <strong>100% custom field mapping</strong>.
+    </p>
+
+    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:16px; margin-bottom:16px;">
+      <div>
+        <label
+          style="display:block; font-size:13px; font-weight:600; color:var(--text-muted); margin-bottom:6px;">Notion
+          API Token (secret_...)</label>
+        <input type="password" id="notion-api-token" class="text-input"
+          placeholder="secret_xxxxxxxxxxxxxxxxxxxxxxxx">
+      </div>
+      <div>
+        <label
+          style="display:block; font-size:13px; font-weight:600; color:var(--text-muted); margin-bottom:6px;">Notion
+          Database ID</label>
+        <input type="text" id="notion-db-id" class="text-input" placeholder="e.g. a867205c088f4e249a5b6f3b060d4b96">
+        <div style="font-size:11px; color:var(--text-dim); margin-top:4px;">
+          💡 32-character ID from your Notion database URL (e.g.,
+          notion.so/workspace/<strong>a867205c088f4e249a5b6f3b060d4b96</strong>?v=...)
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex; gap:12px;">
+      <button class="btn btn-primary" onclick="saveNotionConfig()">💾 Save Notion Credentials</button>
+      <button class="btn btn-outline" onclick="fetchNotionSchema()">🔄 Fetch Database Properties</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">
+      <span>Notion Field & Priority Option Mapping</span>
+    </div>
+    <p style="font-size:14px; color:var(--text-muted); margin-bottom:16px;">
+      Map each task detail to your Notion database properties. You can map candidate titles, summaries, priority,
+      due dates, projects, or source email links to any matching property in Notion.
+    </p>
+
+    <div class="table-responsive">
+      <table class="mapping-table">
+        <thead>
+          <tr>
+            <th style="width: 35%;">Task Candidate Detail</th>
+            <th style="width: 20%;">Internal Field</th>
+            <th style="width: 30%;">Notion Database Property</th>
+            <th style="width: 15%;">Property Type</th>
+          </tr>
+        </thead>
+        <tbody id="mapping-table-body">
+        </tbody>
+      </table>
+    </div>
+
+    <div style="margin-top:20px; text-align:right;">
+      <button class="btn btn-success" onclick="saveNotionMapping()">
+        💾 Save Custom Field Mapping
+      </button>
+    </div>
+  </div>
+</section>

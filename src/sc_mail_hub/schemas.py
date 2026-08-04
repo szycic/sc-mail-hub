@@ -6,20 +6,20 @@ from datetime import datetime
 class TaskCandidateBase(BaseModel):
     title: str
     summary: Optional[str] = None
-    importance: str = "MEDIUM"
     is_task: bool = True
-    priority: str = "MEDIUM"
+    priority: Optional[str] = None
     start_date: Optional[str] = None
     deadline: Optional[str] = None
+    source_url: Optional[str] = None
 
 class TaskCandidateUpdate(BaseModel):
     title: Optional[str] = None
     summary: Optional[str] = None
-    importance: Optional[str] = None
     is_task: Optional[bool] = None
     priority: Optional[str] = None
     start_date: Optional[str] = None
     deadline: Optional[str] = None
+    source_url: Optional[str] = None
     status: Optional[str] = None
 
 class TaskCandidateOut(TaskCandidateBase):
@@ -31,6 +31,8 @@ class TaskCandidateOut(TaskCandidateBase):
     created_at: datetime
     sender: Optional[str] = None
     recipient: Optional[str] = None
+    account_email: Optional[str] = None
+    recipient_type: Optional[str] = None
     subject: Optional[str] = None
     received_at: Optional[str] = None
 

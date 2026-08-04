@@ -98,6 +98,7 @@ def root_redirect():
 @app.get("/notion")
 @app.get("/accounts")
 @app.get("/ai")
+@app.get("/admin")
 def index_page(request: Request):
     return templates.TemplateResponse(request=request, name="index.html")
 

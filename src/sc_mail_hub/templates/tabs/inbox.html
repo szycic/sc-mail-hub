@@ -1,0 +1,58 @@
+<section id="tab-inbox" class="tab-content active">
+  <div
+    style="display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; flex-wrap:wrap; gap:12px;">
+    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+      <button class="btn btn-outline btn-sm inbox-filter-btn active" id="filter-btn-PENDING"
+        onclick="filterInbox('PENDING')">Pending Emails</button>
+      <button class="btn btn-outline btn-sm inbox-filter-btn" id="filter-btn-AI_PROCESSED"
+        onclick="filterInbox('AI_PROCESSED')">AI Processed</button>
+      <button class="btn btn-outline btn-sm inbox-filter-btn" id="filter-btn-CREATED"
+        onclick="filterInbox('CREATED')">Synced to Notion</button>
+      <button class="btn btn-outline btn-sm inbox-filter-btn" id="filter-btn-IGNORED"
+        onclick="filterInbox('IGNORED')">Ignored</button>
+      <button class="btn btn-outline btn-sm inbox-filter-btn" id="filter-btn-ALL" onclick="filterInbox('ALL')">All
+        Messages</button>
+    </div>
+
+    <button class="btn btn-primary btn-sm" onclick="triggerSampleIngest()">
+      ⚡ Load Emails
+    </button>
+  </div>
+
+  <div
+    style="display:flex; align-items:center; justify-content:space-between; margin-bottom:20px; background:rgba(255,255,255,0.02); padding:10px 14px; border-radius:8px; border:1px solid rgba(255,255,255,0.06); flex-wrap:wrap; gap:12px;">
+    <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+      <div style="display:flex; align-items:center; gap:6px;">
+        <span style="font-size:12px; color:var(--text-dim); font-weight:600;">📧 Account:</span>
+        <select id="filter-account" class="select-input" style="padding:4px 10px; font-size:12px; width:auto;"
+          onchange="loadCandidates()">
+          <option value="ALL">All Connected Accounts</option>
+        </select>
+      </div>
+
+      <div style="display:flex; align-items:center; gap:6px;">
+        <span style="font-size:12px; color:var(--text-dim); font-weight:600;">📩 Recipient Type:</span>
+        <select id="filter-recipient-type" class="select-input" style="padding:4px 10px; font-size:12px; width:auto;"
+          onchange="loadCandidates()">
+          <option value="ALL">All Types</option>
+          <option value="DIRECT">👤 Direct Emails Only</option>
+          <option value="MAILING_GROUP">👥 Mailing Groups Only</option>
+        </select>
+      </div>
+    </div>
+
+    <div style="display:flex; align-items:center; gap:6px;">
+      <span style="font-size:12px; color:var(--text-dim); font-weight:600;">↕️ Sort By:</span>
+      <select id="sort-candidates" class="select-input" style="padding:4px 10px; font-size:12px; width:auto;"
+        onchange="loadCandidates()">
+        <option value="NEWEST">Newest First</option>
+        <option value="OLDEST">Oldest First</option>
+        <option value="DIRECT_FIRST">👤 Direct Emails First</option>
+        <option value="GROUP_FIRST">👥 Mailing Groups First</option>
+      </select>
+    </div>
+  </div>
+
+  <div id="candidates-list">
+  </div>
+</section>

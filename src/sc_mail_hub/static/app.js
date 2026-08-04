@@ -2,14 +2,14 @@
 
 document.addEventListener("DOMContentLoaded", async () => {
   initTabs();
+  await loadAccounts();
   loadCandidates();
   await loadNotionConfig();
-  loadAccounts();
   loadAISettings();
 
   // Auto-refresh inbox candidates every 30 seconds
   setInterval(() => {
-    loadCandidates(currentStatusFilter);
+    loadCandidates();
   }, 30000);
 });
 
@@ -77,7 +77,7 @@ function switchTab(tabName, updateHistory = true) {
 
 function getTabFromPath() {
   const path = window.location.pathname.replace(/^\//, "").split("/")[0].toLowerCase();
-  const validTabs = ["inbox", "notion", "accounts", "ai"];
+  const validTabs = ["inbox", "notion", "accounts", "ai", "admin"];
   if (validTabs.includes(path)) {
     return path;
   }
@@ -111,21 +111,133 @@ async function loadCandidates(statusFilter) {
   const listEl = document.getElementById("candidates-list");
   if (!listEl) return;
 
+  const accountFilter = document.getElementById("filter-account")?.value || "ALL";
+  const recipientTypeFilter = document.getElementById("filter-recipient-type")?.value || "ALL";
+  const sortBy = document.getElementById("sort-candidates")?.value || "NEWEST";
+
   listEl.innerHTML = `<div class="empty-state"><div class="empty-icon">⏳</div>Loading task candidates...</div>`;
 
   try {
-    let url = "/api/inbox/candidates";
+    const params = new URLSearchParams();
     if (currentStatusFilter && currentStatusFilter !== "ALL") {
-      url += `?status=${currentStatusFilter}`;
+      params.append("status", currentStatusFilter);
     }
+    if (accountFilter && accountFilter !== "ALL") {
+      params.append("account_id", accountFilter);
+    }
+    if (recipientTypeFilter && recipientTypeFilter !== "ALL") {
+      params.append("recipient_type", recipientTypeFilter);
+    }
+    if (sortBy) {
+      params.append("sort_by", sortBy);
+    }
+
+    const url = `/api/inbox/candidates?${params.toString()}`;
     const res = await fetch(url);
     if (!res.ok) throw new Error("Failed to fetch candidates");
 
     currentCandidates = await res.json();
     renderCandidates(currentCandidates);
   } catch (err) {
-    listEl.innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div>Error loading candidates: ${err.message}</div>`;
+    if (listEl) listEl.innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div>Error loading candidates: ${err.message}</div>`;
   }
+}
+
+function formatStandardDisplayDate(dateStr) {
+  if (!dateStr || !String(dateStr).trim() || String(dateStr).trim().toLowerCase() === "null" || String(dateStr).trim().toLowerCase() === "none") return "";
+  let str = String(dateStr).trim();
+
+  str = str.replace(/^(?:Sun|Mon|Tue|Wed|Thu|Fri|Sat)[a-z]*[\, \s]+/i, "");
+  str = str.replace(/(\d+)(?:st|nd|rd|th)/gi, "$1");
+
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+    const [y, m, d] = str.split("-");
+    const mIdx = parseInt(m, 10) - 1;
+    if (mIdx >= 0 && mIdx < 12) {
+      return `${String(d).padStart(2, "0")} ${months[mIdx]} ${y}`;
+    }
+  }
+
+  const euroFullMatch = str.match(/^(\d{1,2})[\/\.\-](\d{1,2})[\/\.\-](\d{4})$/);
+  if (euroFullMatch) {
+    const day = String(euroFullMatch[1]).padStart(2, "0");
+    const mIdx = parseInt(euroFullMatch[2], 10) - 1;
+    const year = euroFullMatch[3];
+    if (mIdx >= 0 && mIdx < 12) {
+      return `${day} ${months[mIdx]} ${year}`;
+    }
+  }
+
+  const match = str.match(/(\d{1,2})\s*([A-Za-z]+)(?:\s*(\d{4}))?/);
+  if (match) {
+    const day = String(match[1]).padStart(2, "0");
+    const monthRaw = match[2].slice(0, 3);
+    const month = monthRaw.charAt(0).toUpperCase() + monthRaw.slice(1).toLowerCase();
+    const year = match[3] || new Date().getFullYear();
+    return `${day} ${month} ${year}`;
+  }
+
+  const parsed = new Date(str);
+  if (!isNaN(parsed.getTime())) {
+    const dd = String(parsed.getDate()).padStart(2, "0");
+    const mm = months[parsed.getMonth()];
+    const yyyy = parsed.getFullYear();
+    return `${dd} ${mm} ${yyyy}`;
+  }
+
+  return str;
+}
+
+function formatDateForPicker(dateStr) {
+  if (!dateStr || !String(dateStr).trim() || String(dateStr).trim().toLowerCase() === "null" || String(dateStr).trim().toLowerCase() === "none") return "";
+  const str = String(dateStr).trim();
+
+  // ISO YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+
+  // European DD/MM/YYYY or DD.MM.YYYY (e.g. 04/08/2026 -> 2026-08-04)
+  const euroFullMatch = str.match(/^(\d{1,2})[\/\.\-](\d{1,2})[\/\.\-](\d{4})$/);
+  if (euroFullMatch) {
+    const day = String(euroFullMatch[1]).padStart(2, "0");
+    const month = String(euroFullMatch[2]).padStart(2, "0");
+    const year = euroFullMatch[3];
+    return `${year}-${month}-${day}`;
+  }
+
+  // European DD/MM or DD.MM (e.g. 04/08 -> 2026-08-04)
+  const euroShortMatch = str.match(/^(\d{1,2})[\/\.\-](\d{1,2})$/);
+  if (euroShortMatch) {
+    const day = String(euroShortMatch[1]).padStart(2, "0");
+    const month = String(euroShortMatch[2]).padStart(2, "0");
+    const year = new Date().getFullYear();
+    return `${year}-${month}-${day}`;
+  }
+
+  // Named months e.g. "4 Aug 2026", "12 August"
+  const monthNames = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+  const namedMatch = str.match(/(\d{1,2})\s*([A-Za-z]+)(?:\s*(\d{4}))?/);
+  if (namedMatch) {
+    const day = String(namedMatch[1]).padStart(2, "0");
+    const mStr = namedMatch[2].slice(0, 3).toLowerCase();
+    const mIdx = monthNames.indexOf(mStr);
+    if (mIdx !== -1) {
+      const month = String(mIdx + 1).padStart(2, "0");
+      const year = namedMatch[3] || new Date().getFullYear();
+      return `${year}-${month}-${day}`;
+    }
+  }
+
+  const d = new Date(str);
+  if (!isNaN(d.getTime())) {
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
+  }
+
+  return "";
 }
 
 function renderCandidates(candidates) {
@@ -147,32 +259,34 @@ function renderCandidates(candidates) {
   }
 
   listEl.innerHTML = candidates.map(c => {
-    const isHigh = c.importance === "HIGH";
-    const isMedium = c.importance === "MEDIUM";
-    const isLow = c.importance === "LOW";
-    const symbol = isHigh ? "●" : isMedium ? "●" : "○";
-
     const isCreated = c.status === "CREATED";
     const isIgnored = c.status === "IGNORED";
+    const isAiProcessed = c.status === "AI_PROCESSED";
+
+    const startDateFmt = (isCreated || isAiProcessed) ? formatStandardDisplayDate(c.start_date) : "";
+    const deadlineFmt = (isCreated || isAiProcessed) ? formatStandardDisplayDate(c.deadline) : "";
 
     return `
-      <div class="candidate-card ${c.importance.toLowerCase()}-importance" id="candidate-card-${c.id}">
+      <div class="candidate-card" id="candidate-card-${c.id}">
         <div class="candidate-header">
           <div>
-            <div style="display:flex; align-items:center; gap:10px; margin-bottom: 6px;">
-              <span class="importance-badge ${c.importance}">${symbol} ${c.importance}</span>
-              ${c.start_date ? `<span class="meta-item" style="color:#6ee7b7;">🚀 <strong>Start: ${escapeHtml(c.start_date)}</strong></span>` : ''}
-              ${c.deadline ? `<span class="meta-item" style="color:#fde047;">📅 <strong>Due: ${escapeHtml(c.deadline)}</strong></span>` : ''}
+            <div style="display:flex; align-items:center; gap:8px; margin-bottom: 6px; flex-wrap:wrap;">
+              ${c.recipient_type === "DIRECT" ? `<span class="type-pill" style="background:rgba(16,185,129,0.15); color:#6ee7b7; border:1px solid rgba(16,185,129,0.3); font-weight:600; font-size:11px; padding:3px 8px; border-radius:4px;">👤 Direct Email</span>` : ''}
+              ${c.recipient_type === "MAILING_GROUP" ? `<span class="type-pill" style="background:rgba(168,85,247,0.15); color:#c084fc; border:1px solid rgba(168,85,247,0.3); font-weight:600; font-size:11px; padding:3px 8px; border-radius:4px;">👥 Mailing Group</span>` : ''}
+              ${(isCreated || isAiProcessed) && c.priority ? `<span class="importance-badge ${c.priority}">${escapeHtml(c.priority)}</span>` : ''}
+              ${startDateFmt ? `<span class="meta-item" style="color:#6ee7b7;">🚀 <strong>Start: ${escapeHtml(startDateFmt)}</strong></span>` : ''}
+              ${deadlineFmt ? `<span class="meta-item" style="color:#fde047;">📅 <strong>Due: ${escapeHtml(deadlineFmt)}</strong></span>` : ''}
             </div>
             <h3 class="candidate-title">${escapeHtml(c.title)}</h3>
           </div>
           <div>
             ${isCreated ? `<span class="btn btn-sm btn-outline" style="color:#10b981; border-color:#10b981;">✓ Synced to Notion</span>` : ''}
+            ${isAiProcessed ? `<span class="btn btn-sm btn-outline" style="color:#60a5fa; border-color:#60a5fa;">✨ Ready for Notion</span>` : ''}
             ${isIgnored ? `<span class="btn btn-sm btn-outline" style="color:#64748b;">Ignored</span>` : ''}
           </div>
         </div>
 
-        <p class="candidate-summary">${escapeHtml(c.summary || '')}</p>
+        ${(isCreated || isAiProcessed) && c.summary ? `<p class="candidate-summary">${escapeHtml(c.summary)}</p>` : ''}
 
         <div class="candidate-meta">
           ${c.sender ? `<div>📧 From: <strong>${escapeHtml(c.sender)}</strong></div>` : ''}
@@ -182,9 +296,18 @@ function renderCandidates(candidates) {
         </div>
 
         <div class="candidate-actions">
-          ${!isCreated && !isIgnored ? `
+          ${!isCreated && !isIgnored && !isAiProcessed ? `
             <button class="btn btn-primary btn-sm" onclick="openTaskReviewModal(${c.id})">
-              ➕ Add to Notion
+              ✨ Run AI & Review
+            </button>
+            <button class="btn btn-outline btn-sm" onclick="ignoreCandidate(${c.id})">
+              🚫 Ignore
+            </button>
+          ` : ''}
+
+          ${isAiProcessed ? `
+            <button class="btn btn-primary btn-sm" onclick="openTaskReviewModal(${c.id})">
+              ✏️ Edit & Add to Notion
             </button>
             <button class="btn btn-outline btn-sm" onclick="ignoreCandidate(${c.id})">
               🚫 Ignore
@@ -206,10 +329,6 @@ function renderCandidates(candidates) {
           <button class="btn btn-outline btn-sm" onclick="previewEmail(${c.id})">
             👁️ Preview Email
           </button>
-
-          <button class="btn btn-outline btn-sm" style="color:#ef4444; border-color:rgba(239,68,68,0.4);" onclick="deleteMessage(${c.id})">
-            🗑️ Delete
-          </button>
         </div>
       </div>
     `;
@@ -220,7 +339,18 @@ async function openTaskReviewModal(candidateId) {
   const card = document.getElementById(`candidate-card-${candidateId}`);
   if (card) card.style.opacity = "0.6";
 
-  showToast("Preparing AI summary for your review...", "info");
+  const candidate = currentCandidates.find(c => c.id === candidateId);
+
+  // If candidate was already AI processed or created, open modal immediately with existing data!
+  if (candidate && (candidate.status === "AI_PROCESSED" || candidate.status === "CREATED")) {
+    fillTaskReviewForm(candidate);
+    if (card) card.style.opacity = "1";
+    const modal = document.getElementById("task-review-modal");
+    if (modal) modal.classList.add("active");
+    return;
+  }
+
+  showToast("Running AI extraction for task details...", "info");
 
   try {
     const res = await fetch(`/api/inbox/candidates/${candidateId}/prepare-task`, {
@@ -230,6 +360,7 @@ async function openTaskReviewModal(candidateId) {
 
     if (res.ok) {
       fillTaskReviewForm(data);
+      loadCandidates();
       const modal = document.getElementById("task-review-modal");
       if (modal) modal.classList.add("active");
       if (card) card.style.opacity = "1";
@@ -243,22 +374,191 @@ async function openTaskReviewModal(candidateId) {
   }
 }
 
-function fillTaskReviewForm(candidate) {
+function updatePriorityDropdownInModal(candidate) {
+  const prioritySelect = document.getElementById("review-priority");
+  if (!prioritySelect) return;
+
+  const priorityMapping = currentFieldMappings.find(m => m.task_field === "priority");
+  let options = [];
+
+  if (priorityMapping && priorityMapping.notion_property_name) {
+    const matchedProp = fetchedNotionProperties.find(p => p.name === priorityMapping.notion_property_name);
+    if (matchedProp && matchedProp.options && matchedProp.options.length > 0) {
+      options = [...matchedProp.options];
+    }
+
+    if (priorityMapping.value_mappings_json) {
+      try {
+        const valMapObj = JSON.parse(priorityMapping.value_mappings_json);
+        if (typeof valMapObj === "object") {
+          Object.values(valMapObj).forEach(val => {
+            if (val && !options.includes(val)) {
+              options.push(val);
+            }
+          });
+        }
+      } catch (e) { }
+    }
+  }
+
+  if (options.length === 0) {
+    options = ["HIGH", "MEDIUM", "LOW"];
+  }
+
+  prioritySelect.innerHTML = options.map(opt => `<option value="${escapeHtml(opt)}">${escapeHtml(opt)}</option>`).join("");
+
+  let targetVal = candidate.priority || "MEDIUM";
+  if (priorityMapping && priorityMapping.value_mappings_json) {
+    try {
+      const valMapObj = JSON.parse(priorityMapping.value_mappings_json);
+      if (valMapObj[targetVal]) {
+        targetVal = valMapObj[targetVal];
+      }
+    } catch (e) { }
+  }
+
+  // Case-insensitive match against allowed Notion schema options
+  let matchedOption = options.find(opt => opt.toLowerCase() === targetVal.toLowerCase());
+
+  if (matchedOption) {
+    prioritySelect.value = matchedOption;
+  } else {
+    // If no exact match, fallback to Medium or Normal before resorting to first option
+    let defaultMatch = options.find(opt => opt.toLowerCase() === "medium" || opt.toLowerCase() === "normal") || options[0];
+    if (defaultMatch) {
+      prioritySelect.value = defaultMatch;
+    }
+  }
+}
+
+function formatDateForPicker(dateStr) {
+  if (!dateStr || !String(dateStr).trim()) return "";
+  const str = String(dateStr).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+
+  const d = new Date(str);
+  if (!isNaN(d.getTime())) {
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  }
+
+  const currentYear = new Date().getFullYear();
+  const dYear = new Date(`${str} ${currentYear}`);
+  if (!isNaN(dYear.getTime())) {
+    const yyyy = dYear.getFullYear();
+    const mm = String(dYear.getMonth() + 1).padStart(2, '0');
+    const dd = String(dYear.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  }
+
+  return "";
+}
+
+let currentReviewRawEmailText = "";
+
+function updateEmailBodyLinkHighlight() {
+  const bodyEl = document.getElementById("review-email-body");
+  const urlInput = document.getElementById("review-url");
+  if (!bodyEl) return;
+
+  const targetUrl = (urlInput?.value || "").trim();
+  bodyEl.innerHTML = highlightExactTargetLink(currentReviewRawEmailText, targetUrl);
+}
+
+function highlightExactTargetLink(text, targetUrl) {
+  if (!text) return "";
+
+  let targetClean = (targetUrl || "").trim().toLowerCase();
+  if (targetClean.endsWith('/')) targetClean = targetClean.slice(0, -1);
+
+  const safeText = escapeHtml(text);
+  const urlRegex = /((?:https?:\/\/|www\.)[^\s<>\"'\(\)]+)/gi;
+
+  return safeText.replace(urlRegex, (matchedUrl) => {
+    let rawUrl = matchedUrl
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#039;/g, "'");
+
+    let cleanUrl = rawUrl.replace(/[\.\,\;\)]+$/, '').toLowerCase();
+    if (cleanUrl.endsWith('/')) cleanUrl = cleanUrl.slice(0, -1);
+
+    let matchUrlLower = rawUrl.toLowerCase();
+    if (matchUrlLower.endsWith('/')) matchUrlLower = matchUrlLower.slice(0, -1);
+
+    const hrefUrl = matchedUrl.startsWith('www.') ? `https://${matchedUrl}` : matchedUrl;
+
+    const isTarget = targetClean.length > 0 && (
+      cleanUrl === targetClean ||
+      matchUrlLower === targetClean ||
+      (cleanUrl.length > 10 && targetClean.includes(cleanUrl)) ||
+      (targetClean.length > 10 && cleanUrl.includes(targetClean))
+    );
+
+    if (isTarget) {
+      return `<mark class="target-link-highlight"><a href="${hrefUrl}" target="_blank">${matchedUrl}</a></mark>`;
+    }
+    return `<a href="${hrefUrl}" target="_blank" class="email-link">${matchedUrl}</a>`;
+  });
+}
+
+async function fillTaskReviewForm(candidate) {
   const idInput = document.getElementById("review-candidate-id");
   const titleInput = document.getElementById("review-title");
   const summaryInput = document.getElementById("review-summary");
-  const importanceInput = document.getElementById("review-importance");
-  const priorityInput = document.getElementById("review-priority");
+  const urlInput = document.getElementById("review-url");
   const startDateInput = document.getElementById("review-start-date");
   const deadlineInput = document.getElementById("review-deadline");
 
   if (idInput) idInput.value = String(candidate.id);
   if (titleInput) titleInput.value = candidate.title || "";
   if (summaryInput) summaryInput.value = candidate.summary || "";
-  if (importanceInput) importanceInput.value = candidate.importance || "MEDIUM";
-  if (priorityInput) priorityInput.value = candidate.priority || "MEDIUM";
-  if (startDateInput) startDateInput.value = candidate.start_date || "";
-  if (deadlineInput) deadlineInput.value = candidate.deadline || "";
+  if (urlInput) urlInput.value = candidate.source_url || "";
+  if (startDateInput) startDateInput.value = formatDateForPicker(candidate.start_date);
+  if (deadlineInput) deadlineInput.value = formatDateForPicker(candidate.deadline);
+
+  updatePriorityDropdownInModal(candidate);
+
+  // Populate Right Column: Original Email Reference with Link Highlighting
+  const senderEl = document.getElementById("review-email-sender");
+  const recipientEl = document.getElementById("review-email-recipient");
+  const subjectEl = document.getElementById("review-email-subject");
+  const dateEl = document.getElementById("review-email-received");
+  const bodyEl = document.getElementById("review-email-body");
+
+  if (senderEl) senderEl.textContent = candidate.sender || "Unknown Sender";
+  if (recipientEl) recipientEl.textContent = candidate.recipient || "Me";
+  if (subjectEl) subjectEl.textContent = candidate.subject || candidate.title || "No Subject";
+  if (dateEl) dateEl.textContent = candidate.received_at || "";
+
+  if (bodyEl) {
+    bodyEl.innerHTML = '<div style="color:var(--text-dim);">⏳ Loading original email text...</div>';
+    try {
+      const emailRes = await fetch(`/api/inbox/candidates/${candidate.id}/email`);
+      if (emailRes.ok) {
+        const emailData = await emailRes.json();
+        currentReviewRawEmailText = emailData.body_text || candidate.summary || "";
+      } else {
+        currentReviewRawEmailText = candidate.summary || "";
+      }
+    } catch (e) {
+      currentReviewRawEmailText = candidate.summary || "";
+    }
+
+    // Auto-extract link if input is empty
+    if (urlInput && !urlInput.value.trim() && currentReviewRawEmailText) {
+      const linkMatch = currentReviewRawEmailText.match(/https?:\/\/[^\s<>\"'\(\)]+/i);
+      if (linkMatch) {
+        urlInput.value = linkMatch[0].replace(/[\.\,\;\)]+$/, '');
+      }
+    }
+
+    updateEmailBodyLinkHighlight();
+  }
 }
 
 function closeTaskReviewModal(e) {
@@ -277,7 +577,7 @@ async function submitReviewedTaskToNotion() {
   const payload = {
     title: document.getElementById("review-title")?.value || "",
     summary: document.getElementById("review-summary")?.value || "",
-    importance: document.getElementById("review-importance")?.value || "MEDIUM",
+    source_url: document.getElementById("review-url")?.value || null,
     priority: document.getElementById("review-priority")?.value || "MEDIUM",
     start_date: document.getElementById("review-start-date")?.value || null,
     deadline: document.getElementById("review-deadline")?.value || null
@@ -324,9 +624,12 @@ async function unignoreCandidate(candidateId) {
     const res = await fetch(`/api/inbox/candidates/${candidateId}/unignore`, {
       method: "POST"
     });
+    const data = await res.json();
     if (res.ok) {
-      showToast("Task candidate restored to pending", "info");
+      showToast(data.message || "Task candidate restored", "info");
       loadCandidates(currentStatusFilter);
+    } else {
+      showToast(data.detail || "Failed to restore candidate", "error");
     }
   } catch (err) {
     showToast(`Error: ${err.message}`, "error");
@@ -379,7 +682,7 @@ function closeEmailPreviewModal(e) {
 }
 
 async function triggerSampleIngest() {
-  const loadingToast = showToast("⚡ Stage 1/3: Connecting to IMAP mailboxes...", "loading", true);
+  const loadingToast = showToast("Stage 1/3: Connecting to IMAP mailboxes...", "loading", true);
 
   try {
     const startRes = await fetch("/api/inbox/sample-ingest/start", { method: "POST" });
@@ -411,7 +714,7 @@ async function triggerSampleIngest() {
       if (payload.status === "completed") {
         finished = true;
         if (loadingToast) {
-          loadingToast.update("⚡ Stage 3/3: Ready for review and Notion sync...", "success");
+          loadingToast.update("Stage 3/3: Ready for review and Notion sync...", "success");
           setTimeout(() => loadingToast.dismiss(), 700);
         }
         showToast(payload.message || "Sync finished", "success");
@@ -471,6 +774,7 @@ function filterInbox(status) {
 }
 
 let fetchedNotionProperties = [];
+let currentFieldMappings = [];
 
 async function loadNotionConfig() {
   try {
@@ -563,6 +867,7 @@ async function loadNotionMapping() {
     if (!res.ok) return;
 
     const mappings = await res.json();
+    currentFieldMappings = mappings;
     renderMappingTable(mappings);
   } catch (err) {
     console.error("Load mapping error", err);
@@ -599,16 +904,11 @@ function renderMappingTable(mappings) {
 
     const showValMapping = m.task_field === "priority";
 
-    const val1 = escapeHtml(valMapObj["HIGH"] || (m.task_field === "priority" ? "High" : ""));
-    const val2 = escapeHtml(valMapObj["MEDIUM"] || (m.task_field === "priority" ? "Medium" : ""));
-    const val3 = escapeHtml(valMapObj["LOW"] || (m.task_field === "priority" ? "Low" : ""));
-
     const optionsPillsHtml = availableOptions.length > 0
-      ? `<div style="margin-top:6px; font-size:11px; color:var(--text-dim);">
-           <span>Notion Options: </span>
-           ${availableOptions.map(opt => `<span class="type-pill" style="cursor:pointer; background:rgba(59,130,246,0.2); margin-right:4px; margin-bottom:4px; display:inline-block;" onclick="copyNotionOptionToInput(this, '${escapeHtml(opt)}')">${escapeHtml(opt)}</span>`).join("")}
+      ? `<div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:4px;">
+           ${availableOptions.map(opt => `<span class="type-pill" style="background:rgba(59,130,246,0.25); color:#93c5fd; font-weight:600; padding:4px 8px; border-radius:4px;">${escapeHtml(opt)}</span>`).join("")}
          </div>`
-      : '';
+      : `<span style="font-size:12px; color:var(--text-dim);">No select/status options found for this property. (Default fallback: HIGH, MEDIUM, LOW)</span>`;
 
     return `
       <tr data-field="${m.task_field}">
@@ -626,22 +926,8 @@ function renderMappingTable(mappings) {
 
           ${showValMapping ? `
             <div class="val-mapping-box" style="margin-top:8px; padding:10px; background:rgba(0,0,0,0.3); border:1px solid var(--border-color); border-radius:8px;">
-              <div style="font-size:11px; font-weight:700; color:var(--text-muted); margin-bottom:6px;">
-                🎯 Match Priority Level with Notion Option Names:
-              </div>
-              <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:8px;">
-                <div>
-                  <span style="font-size:11px; color:#ef4444; font-weight:700; display:block; margin-bottom:2px;">HIGH ➔</span>
-                  <input type="text" class="text-input val-map-input" data-key="HIGH" value="${val1}" placeholder="e.g. High or 🔴 High" style="padding:4px 8px; font-size:12px;">
-                </div>
-                <div>
-                  <span style="font-size:11px; color:#f59e0b; font-weight:700; display:block; margin-bottom:2px;">MEDIUM ➔</span>
-                  <input type="text" class="text-input val-map-input" data-key="MEDIUM" value="${val2}" placeholder="e.g. Medium or 🟡 Medium" style="padding:4px 8px; font-size:12px;">
-                </div>
-                <div>
-                  <span style="font-size:11px; color:#94a3b8; font-weight:700; display:block; margin-bottom:2px;">LOW ➔</span>
-                  <input type="text" class="text-input val-map-input" data-key="LOW" value="${val3}" placeholder="e.g. Low or 🟢 Low" style="padding:4px 8px; font-size:12px;">
-                </div>
+              <div style="font-size:12px; font-weight:700; color:var(--text-main); margin-bottom:4px;">
+                📌 Mapped Notion Priority Options:
               </div>
               <div class="options-pills-container">${optionsPillsHtml}</div>
             </div>
@@ -653,17 +939,6 @@ function renderMappingTable(mappings) {
       </tr>
     `;
   }).join("");
-}
-
-function copyNotionOptionToInput(pillEl, valText, nameText) {
-  const box = pillEl.closest(".val-mapping-box");
-  if (!box) return;
-  const inputs = box.querySelectorAll(".val-map-input");
-  let targetInput = Array.from(inputs).find(i => document.activeElement === i) || Array.from(inputs).find(i => !i.value) || inputs[0];
-  if (targetInput) {
-    targetInput.value = valText;
-    showToast(`Set "${targetInput.getAttribute('data-key')}" to ${nameText ? `"${nameText}"` : valText}`, "info");
-  }
 }
 
 function onPropertySelectChange(selectEl) {
@@ -679,20 +954,18 @@ function onPropertySelectChange(selectEl) {
     typeCell.innerHTML = `<span style="color:var(--text-dim); font-size:12px;">Not Mapped</span>`;
   }
 
-  // Update options pills if available
   const pillsContainer = row.querySelector(".options-pills-container");
   if (pillsContainer) {
     const matchedProp = fetchedNotionProperties.find(p => p.name === propName);
     const availableOptions = matchedProp && matchedProp.options ? matchedProp.options : [];
     if (availableOptions.length > 0) {
       pillsContainer.innerHTML = `
-        <div style="margin-top:6px; font-size:11px; color:var(--text-dim);">
-          <span>Notion Options: </span>
-          ${availableOptions.map(opt => `<span class="type-pill" style="cursor:pointer; background:rgba(59,130,246,0.2); margin-right:4px;" onclick="copyNotionOptionToInput(this, '${escapeHtml(opt)}')">${escapeHtml(opt)}</span>`).join("")}
+        <div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:4px;">
+          ${availableOptions.map(opt => `<span class="type-pill" style="background:rgba(59,130,246,0.25); color:#93c5fd; font-weight:600; padding:4px 8px; border-radius:4px;">${escapeHtml(opt)}</span>`).join("")}
         </div>
       `;
     } else {
-      pillsContainer.innerHTML = '';
+      pillsContainer.innerHTML = `<span style="font-size:12px; color:var(--text-dim);">No select/status options found for this property. (Default fallback: HIGH, MEDIUM, LOW)</span>`;
     }
   }
 }
@@ -746,11 +1019,20 @@ async function saveNotionMapping() {
 
 async function loadAccounts() {
   const listEl = document.getElementById("accounts-list");
-  if (!listEl) return;
 
   try {
     const res = await fetch("/api/accounts");
     const accounts = await res.json();
+
+    const filterAccSelect = document.getElementById("filter-account");
+    if (filterAccSelect) {
+      const curVal = filterAccSelect.value || "ALL";
+      filterAccSelect.innerHTML = `<option value="ALL">All Connected Accounts</option>` +
+        accounts.map(a => `<option value="${a.id}">${escapeHtml(a.name)} (${escapeHtml(a.email_address)})</option>`).join("");
+      filterAccSelect.value = curVal;
+    }
+
+    if (!listEl) return;
 
     if (accounts.length === 0) {
       listEl.innerHTML = `
@@ -871,7 +1153,7 @@ async function addAccount() {
 }
 
 async function syncAccount(accId) {
-  const syncToast = showToast("⏳ Sync in progress: fetching emails from IMAP mailbox...", "loading", true);
+  const syncToast = showToast("Sync in progress: fetching emails from IMAP mailbox...", "loading", true);
   try {
     const res = await fetch(`/api/accounts/${accId}/sync`, { method: "POST" });
     const data = await res.json();

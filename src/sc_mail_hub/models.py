@@ -44,13 +44,14 @@ class TaskCandidate(Base):
     email_id = Column(Integer, ForeignKey("email_messages.id"), nullable=True)
     title = Column(String(255), nullable=False)
     summary = Column(Text, nullable=True)
-    importance = Column(String(20), default="MEDIUM")  # 'HIGH', 'MEDIUM', 'LOW'
     is_task = Column(Boolean, default=True)
-    priority = Column(String(20), default="MEDIUM")    # 'HIGH', 'MEDIUM', 'LOW'
+    priority = Column(String(20), nullable=True)       # 'HIGH', 'MEDIUM', 'LOW'
     start_date = Column(String(100), nullable=True)     # e.g. "10 Aug" or "2026-08-10"
     deadline = Column(String(100), nullable=True)       # e.g. "12 Aug" or "2026-08-12"
+    source_url = Column(String(500), nullable=True)     # Extracted HTTP/HTTPS URL from email
     project = Column(String(100), nullable=True)        # e.g. "ESN Poland"
-    status = Column(String(20), default="PENDING")      # 'PENDING', 'CREATED', 'IGNORED'
+    status = Column(String(20), default="PENDING")      # 'PENDING', 'AI_PROCESSED', 'CREATED', 'IGNORED'
+    previous_status = Column(String(20), nullable=True) # Tracks stage prior to IGNORED status
     notion_page_id = Column(String(255), nullable=True)
     notion_url = Column(String(500), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)

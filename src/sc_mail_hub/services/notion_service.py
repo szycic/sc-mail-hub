@@ -125,16 +125,40 @@ class NotionService:
         if not start_date_val or not str(start_date_val).strip():
             start_date_val = email_date_str
 
+        # Extract real HTTP/HTTPS URLs from email body (if present)
+        http_url = ""
+        if email_msg and email_msg.body_text:
+            extracted_links = re.findall(r'https?://[^\s<>\"\'\(\)]+', email_msg.body_text)
+            for link in extracted_links:
+                link_lower = link.lower()
+                if not any(ignore_kw in link_lower for ignore_kw in ["unsubscribe", "privacy", "opt-out", "preferences"]):
+                    http_url = link
+                    break
+            if not http_url and extracted_links:
+                http_url = extracted_links[0]
+
+        # Generate email PDF copy for attachment mapping
+        pdf_attachment_url = ""
+        if email_msg:
+            from sc_mail_hub.services.email_service import EmailService
+            from sc_mail_hub.config import settings
+            pdf_rel = EmailService.generate_email_pdf(email_msg)
+            base_url = (settings.BASE_URL or "http://localhost:8001").rstrip("/")
+            pdf_attachment_url = f"{base_url}{pdf_rel}"
+
+        # Use candidate's reviewed source_url if set, otherwise fallback to extracted http_url
+        final_source_url = candidate.source_url if candidate.source_url is not None else http_url
+
         candidate_values = {
             "title": candidate.title,
             "summary": candidate.summary or "",
-            "importance": candidate.importance or "MEDIUM",
             "priority": candidate.priority or "MEDIUM",
             "start_date": start_date_val,
             "deadline": candidate.deadline or "",
             "sender": email_msg.sender if email_msg else "",
             "email_date": email_date_str,
-            "source_url": f"email://msg-{candidate.email_id}" if candidate.email_id else ""
+            "source_url": final_source_url,
+            "attachment": pdf_attachment_url
         }
 
         notion_properties = {}
@@ -183,9 +207,19 @@ class NotionService:
                             "date": {"start": date_iso}
                         }
             elif p_type == "url":
-                if raw_val:
+                if raw_val and (str(raw_val).startswith("http://") or str(raw_val).startswith("https://")):
                     notion_properties[p_name] = {
                         "url": str(raw_val)[:1000]
+                    }
+            elif p_type == "files":
+                if raw_val:
+                    filename = f"Email_{email_msg.id}.pdf" if email_msg else f"Task_{candidate.id}.pdf"
+                    notion_properties[p_name] = {
+                        "files": [{
+                            "name": filename,
+                            "type": "external",
+                            "external": {"url": str(raw_val)[:1000]}
+                        }]
                     }
             elif p_type == "checkbox":
                 notion_properties[p_name] = {

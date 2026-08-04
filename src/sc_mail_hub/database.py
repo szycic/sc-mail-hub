@@ -39,6 +39,8 @@ def init_db():
     with engine.connect() as conn:
         migrations = [
             "ALTER TABLE task_candidates ADD COLUMN start_date VARCHAR(100)",
+            "ALTER TABLE task_candidates ADD COLUMN source_url VARCHAR(500)",
+            "ALTER TABLE task_candidates ADD COLUMN previous_status VARCHAR(20)",
             "ALTER TABLE email_accounts ADD COLUMN last_uid INTEGER",
             "ALTER TABLE email_accounts ADD COLUMN uid_validity VARCHAR(64)",
             "ALTER TABLE email_messages ADD COLUMN email_uid INTEGER",

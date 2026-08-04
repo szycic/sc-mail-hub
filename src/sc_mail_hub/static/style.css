@@ -638,3 +638,102 @@ body {
   text-align: right;
   background: rgba(255, 255, 255, 0.02);
 }
+
+/* Task Review Modal & Split-Pane Layout */
+.task-review-container {
+  max-width: 1100px;
+  width: 94vw;
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.review-modal-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  overflow-y: auto;
+  padding: 18px 0;
+}
+
+@media (max-width: 868px) {
+  .review-modal-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.review-form-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  background: rgba(0, 0, 0, 0.2);
+  padding: 18px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-color);
+}
+
+.review-email-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  background: rgba(0, 0, 0, 0.3);
+  padding: 18px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-highlight);
+  overflow-y: auto;
+}
+
+.review-email-header-box {
+  font-size: 12px;
+  color: var(--text-dim);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.review-email-body-content {
+  background: #0f172a;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  padding: 16px;
+  font-size: 13px;
+  line-height: 1.65;
+  color: #f8fafc;
+  white-space: pre-wrap;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  max-height: 380px;
+  overflow-y: auto;
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.5);
+}
+
+/* Link Highlighting CSS */
+.email-link {
+  color: #60a5fa;
+  text-decoration: underline;
+  transition: color 0.15s ease;
+}
+
+.email-link:hover {
+  color: #93c5fd;
+}
+
+mark.target-link-highlight {
+  background: rgba(245, 158, 11, 0.18) !important;
+  color: #fde047 !important;
+  padding: 2px 6px !important;
+  border-radius: 4px !important;
+  font-weight: 600 !important;
+  border: 1px solid rgba(245, 158, 11, 0.4) !important;
+  display: inline !important;
+  box-shadow: none !important;
+}
+
+mark.target-link-highlight a {
+  color: #fde047 !important;
+  text-decoration: underline !important;
+  font-weight: 600 !important;
+}

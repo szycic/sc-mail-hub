@@ -36,7 +36,7 @@ def _run_sample_ingest_job(job_id: str, loop: asyncio.AbstractEventLoop) -> None
 
         _enqueue_ingest_event(loop, job_id, {
             "status": "stage",
-            "message": f"⚡ Stage 1/3: Connecting to {len(accounts)} IMAP mailbox(es)..."
+            "message": f"Stage 1/3: Connecting to {len(accounts)} IMAP mailbox(es)..."
         })
 
         total_emails = 0
@@ -45,7 +45,7 @@ def _run_sample_ingest_job(job_id: str, loop: asyncio.AbstractEventLoop) -> None
         for idx, account in enumerate(accounts, start=1):
             _enqueue_ingest_event(loop, job_id, {
                 "status": "stage",
-                "message": f"⚡ Stage 2/3: Syncing account {idx}/{len(accounts)} ({account.email_address})..."
+                "message": f"Stage 2/3: Syncing account {idx}/{len(accounts)} ({account.email_address})..."
             })
 
             emails = EmailService.fetch_from_imap(account, db)
@@ -118,18 +118,23 @@ async def sample_ingest_progress_ws(websocket: WebSocket, job_id: str):
 @router.get("/candidates", response_model=List[TaskCandidateOut])
 def get_candidates(
     status: Optional[str] = Query(None, description="Filter by status e.g. PENDING, CREATED, IGNORED, ALL"),
-    importance: Optional[str] = Query(None, description="Filter by importance e.g. HIGH, MEDIUM, LOW"),
+    account_id: Optional[str] = Query(None, description="Filter by connected account ID or ALL"),
+    recipient_type: Optional[str] = Query(None, description="Filter by recipient type e.g. DIRECT, MAILING_GROUP, ALL"),
+    sort_by: Optional[str] = Query("NEWEST", description="Sort order e.g. NEWEST, OLDEST, DIRECT_FIRST, GROUP_FIRST"),
     db: Session = Depends(get_db)
 ):
     query = db.query(TaskCandidate)
     if status and status.upper() != "ALL":
         query = query.filter(TaskCandidate.status == status)
-    if importance and importance.upper() != "ALL":
-        query = query.filter(TaskCandidate.importance == importance)
     
+    if account_id and account_id.upper() != "ALL":
+        try:
+            acc_id_int = int(account_id)
+            query = query.join(EmailMessage, TaskCandidate.email_id == EmailMessage.id).filter(EmailMessage.account_id == acc_id_int)
+        except ValueError:
+            pass
+
     candidates = query.all()
-    importance_order = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
-    candidates.sort(key=lambda c: (importance_order.get(c.importance, 3), -c.id))
 
     result = []
     for c in candidates:
@@ -141,8 +146,46 @@ def get_candidates(
             out.subject = email_msg.subject
             if email_msg.received_at:
                 out.received_at = email_msg.received_at.strftime("%d %b %Y, %H:%M")
+
+            acc = db.query(EmailAccount).filter(EmailAccount.id == email_msg.account_id).first() if email_msg.account_id else None
+            account_email = acc.email_address if acc else ""
+            out.account_email = account_email
+
+            import re
+            rec_str = (email_msg.recipient or "").lower()
+            acc_str = (account_email or "").lower()
+
+            m_rec_emails = re.findall(r'[\w\.-]+@[\w\.-]+', rec_str)
+            m_acc = re.search(r'[\w\.-]+@[\w\.-]+', acc_str)
+            acc_clean = m_acc.group(0).lower() if m_acc else acc_str
+
+            is_direct = False
+            if m_rec_emails:
+                if len(m_rec_emails) == 1 and m_rec_emails[0] == acc_clean:
+                    is_direct = True
+                elif acc_clean in m_rec_emails and not any(g_kw in rec_str for g_kw in ["list", "group", "all@", "board@", "esn-", "team@"]):
+                    is_direct = True
+
+            out.recipient_type = "DIRECT" if is_direct else "MAILING_GROUP"
+        else:
+            out.recipient_type = "DIRECT"
+        
+        if recipient_type and recipient_type.upper() != "ALL":
+            if out.recipient_type != recipient_type.upper():
+                continue
+
         result.append(out)
     
+    sort_mode = (sort_by or "NEWEST").upper()
+    if sort_mode == "OLDEST":
+        result.sort(key=lambda item: item.id)
+    elif sort_mode == "DIRECT_FIRST":
+        result.sort(key=lambda item: (0 if item.recipient_type == "DIRECT" else 1, -item.id))
+    elif sort_mode == "GROUP_FIRST":
+        result.sort(key=lambda item: (0 if item.recipient_type == "MAILING_GROUP" else 1, -item.id))
+    else:
+        result.sort(key=lambda item: -item.id)
+
     return result
 
 @router.get("/candidates/{candidate_id}/email")
@@ -197,25 +240,31 @@ def update_candidate(candidate_id: int, payload: TaskCandidateUpdate, db: Sessio
 
 @router.post("/candidates/{candidate_id}/prepare-task", response_model=TaskCandidateOut)
 def prepare_task_with_ai(candidate_id: int, db: Session = Depends(get_db)):
-    """Run AI analysis only when the user explicitly prepares a task for Notion."""
+    """Run AI analysis only when candidate status is PENDING, then set status to AI_PROCESSED."""
     candidate = db.query(TaskCandidate).filter(TaskCandidate.id == candidate_id).first()
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidate not found")
 
-    if not candidate.email_id:
-        return TaskCandidateOut.model_validate(candidate)
+    email_msg = db.query(EmailMessage).filter(EmailMessage.id == candidate.email_id).first() if candidate.email_id else None
 
-    email_msg = db.query(EmailMessage).filter(EmailMessage.id == candidate.email_id).first()
-    if not email_msg:
-        raise HTTPException(status_code=404, detail="Email message not found")
+    # Only invoke AI analysis if candidate has not been processed yet!
+    if candidate.status == "PENDING" and email_msg:
+        candidate = AIService.analyze_email(email_msg, db)
+        candidate.status = "AI_PROCESSED"
+        db.commit()
+        db.refresh(candidate)
+    elif candidate.status == "PENDING":
+        candidate.status = "AI_PROCESSED"
+        db.commit()
+        db.refresh(candidate)
 
-    candidate = AIService.analyze_email(email_msg, db)
     out = TaskCandidateOut.model_validate(candidate)
-    out.sender = email_msg.sender
-    out.recipient = email_msg.recipient
-    out.subject = email_msg.subject
-    if email_msg.received_at:
-        out.received_at = email_msg.received_at.strftime("%d %b %Y, %H:%M")
+    if email_msg:
+        out.sender = email_msg.sender
+        out.recipient = email_msg.recipient
+        out.subject = email_msg.subject
+        if email_msg.received_at:
+            out.received_at = email_msg.received_at.strftime("%d %b %Y, %H:%M")
     return out
 
 @router.post("/candidates/{candidate_id}/create-task")
@@ -248,6 +297,8 @@ def ignore_candidate(candidate_id: int, db: Session = Depends(get_db)):
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidate not found")
 
+    if candidate.status != "IGNORED":
+        candidate.previous_status = candidate.status
     candidate.status = "IGNORED"
     db.commit()
     return {"message": "Task candidate marked as ignored", "candidate_id": candidate.id}
@@ -258,9 +309,18 @@ def unignore_candidate(candidate_id: int, db: Session = Depends(get_db)):
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidate not found")
 
-    candidate.status = "PENDING"
+    target_status = candidate.previous_status or "PENDING"
+    if target_status == "IGNORED":
+        target_status = "PENDING"
+
+    candidate.status = target_status
+    if target_status == "AI_PROCESSED":
+        msg = "Task candidate restored to AI Processed stage"
+    else:
+        msg = "Task candidate restored to Pending Emails"
+
     db.commit()
-    return {"message": "Task candidate restored to pending", "candidate_id": candidate.id}
+    return {"message": msg, "candidate_id": candidate.id, "status": candidate.status}
 
 @router.delete("/candidates/{candidate_id}")
 def delete_candidate(candidate_id: int, db: Session = Depends(get_db)):

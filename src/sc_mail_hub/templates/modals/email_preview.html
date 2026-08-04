@@ -1,0 +1,22 @@
+<div id="email-preview-modal" class="modal-overlay" onclick="closeEmailPreviewModal(event)">
+  <div class="modal-card" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <div>
+        <span class="type-pill" style="margin-bottom:6px; display:inline-block;">Email Message Preview</span>
+        <h3 id="modal-email-subject" style="font-size:18px; color:var(--text-main); margin-bottom:4px;"></h3>
+        <div style="font-size:13px; color:var(--text-muted); display:flex; gap:16px; flex-wrap:wrap;">
+          <span>📧 From: <strong id="modal-email-sender" style="color:var(--text-main);"></strong></span>
+          <span>📩 Received: <span id="modal-email-date"></span></span>
+        </div>
+      </div>
+      <button class="modal-close-btn" onclick="closeEmailPreviewModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <pre id="modal-email-body"
+        style="white-space:pre-wrap; font-family:inherit; font-size:14px; color:var(--text-main); line-height:1.6;"></pre>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline btn-sm" onclick="closeEmailPreviewModal()">Close Preview</button>
+    </div>
+  </div>
+</div>

@@ -217,5 +217,6 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-# Local configuration
+# Local files
 data/
+src/sc_mail_hub/static/pdfs/

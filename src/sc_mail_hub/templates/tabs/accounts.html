@@ -1,0 +1,52 @@
+<section id="tab-accounts" class="tab-content">
+  <div class="card">
+    <div class="card-title">Connect Email Account (Gmail / Zoho / IMAP)</div>
+    <p style="font-size:14px; color:var(--text-muted); margin-bottom:16px;">
+      Connect your Google Gmail or Zoho Mail account via IMAP/OAuth for automated email monitoring.
+    </p>
+
+    <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:12px; margin-bottom:12px;">
+      <div>
+        <label style="font-size:12px; color:var(--text-dim); font-weight:600;">Account Label</label>
+        <input type="text" id="acc-name" class="text-input" placeholder="e.g. ESN Work Email">
+      </div>
+      <div>
+        <label style="font-size:12px; color:var(--text-dim); font-weight:600;">Provider</label>
+        <select id="acc-provider" class="select-input">
+          <option value="gmail">Google Gmail</option>
+          <option value="zoho">Zoho Mail</option>
+          <option value="imap">Generic IMAP</option>
+        </select>
+      </div>
+      <div>
+        <label style="font-size:12px; color:var(--text-dim); font-weight:600;">Email Address</label>
+        <input type="email" id="acc-email" class="text-input" placeholder="name@example.com">
+      </div>
+    </div>
+
+    <div style="display:grid; grid-template-columns: 2fr 2fr 1fr; gap:12px; margin-bottom:16px;">
+      <div>
+        <label style="font-size:12px; color:var(--text-dim); font-weight:600;">Password / App Secret</label>
+        <input type="password" id="acc-password" class="text-input" placeholder="App password or secret">
+      </div>
+      <div>
+        <label style="font-size:12px; color:var(--text-dim); font-weight:600;">IMAP Host</label>
+        <input type="text" id="acc-host" class="text-input" placeholder="imap.gmail.com or imap.zoho.eu">
+      </div>
+      <div>
+        <label style="font-size:12px; color:var(--text-dim); font-weight:600;">Port</label>
+        <input type="number" id="acc-port" class="text-input" value="993">
+      </div>
+    </div>
+    <div style="display:flex; gap:10px; flex-wrap:wrap;">
+      <button class="btn btn-primary" onclick="addAccount()">➕ Connect Email Account</button>
+      <button class="btn btn-outline" onclick="testNewAccountCredentials()">⚡ Test Connection</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Connected Accounts</div>
+    <div id="accounts-list">
+    </div>
+  </div>
+</section>

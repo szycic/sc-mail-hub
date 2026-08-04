@@ -1,0 +1,25 @@
+<section id="tab-admin" class="tab-content">
+  <div class="card" style="border: 1px solid rgba(239, 68, 68, 0.3);">
+    <div class="card-title" style="color: #ef4444;">
+      <span>⚠️ Danger Zone</span>
+    </div>
+    <p style="font-size:14px; color:var(--text-muted); margin-bottom:16px;">
+      Administrative maintenance operations. Deleting data from this panel permanently clears local state.
+    </p>
+
+    <div
+      style="padding:16px; background:rgba(239, 68, 68, 0.05); border-radius:8px; border:1px solid rgba(239,68,68,0.2); display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+      <div>
+        <h4 style="font-size:15px; font-weight:700; color:var(--text-main); margin-bottom:4px;">Empty Inbox & Reset
+          Database</h4>
+        <p style="font-size:13px; color:var(--text-dim); margin:0;">
+          Permanently purges all task candidates, downloaded email records, and resets IMAP UID sync markers.
+        </p>
+      </div>
+      <button class="btn btn-outline" style="color:#ef4444; border-color:#ef4444; background:rgba(239,68,68,0.1);"
+        onclick="emptyInbox()">
+        🗑️ Empty Inbox Database
+      </button>
+    </div>
+  </div>
+</section>

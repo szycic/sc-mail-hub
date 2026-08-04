@@ -13,26 +13,18 @@ class AIService:
         heuristic = AIService._analyze_heuristic(email_msg)
 
         title = AIService._normalize_title(email_msg.subject)
-        summary = heuristic.get("summary") or (email_msg.body_text or "")[:240]
-        start_date = heuristic.get("start_date")
 
         if existing_candidate:
             existing_candidate.title = title or existing_candidate.title
-            existing_candidate.summary = summary or existing_candidate.summary
-            existing_candidate.importance = existing_candidate.importance or "LOW"
-            existing_candidate.priority = existing_candidate.priority or "LOW"
-            if not existing_candidate.start_date:
-                existing_candidate.start_date = start_date
             candidate = existing_candidate
         else:
             candidate = TaskCandidate(
                 email_id=email_msg.id,
                 title=title,
-                summary=summary,
-                importance="LOW",
+                summary=None,
                 is_task=True,
-                priority="LOW",
-                start_date=start_date,
+                priority=None,
+                start_date=None,
                 deadline=None,
                 status="PENDING"
             )
@@ -111,44 +103,106 @@ class AIService:
         return {"success": False, "error": f"Unsupported AI provider: {provider}"}
 
     @staticmethod
+    def get_priority_options_from_notion(db: Session) -> list[str]:
+        """Fetch allowed priority select options from Notion database schema or configuration."""
+        from sc_mail_hub.models import NotionConfig, NotionFieldMapping
+        from sc_mail_hub.services.notion_service import NotionService
+
+        config = db.query(NotionConfig).first()
+        if not config or not config.database_id or not config.api_token:
+            return ["HIGH", "MEDIUM", "LOW"]
+
+        field_mapping = db.query(NotionFieldMapping).filter(NotionFieldMapping.task_field == "priority").first()
+        target_prop_name = field_mapping.notion_property_name if field_mapping else "Priority"
+
+        # Check cached schema first
+        if config.last_schema_json:
+            try:
+                props = json.loads(config.last_schema_json)
+                for p in props:
+                    p_name = p.get("name", "")
+                    if p_name.lower() == target_prop_name.lower() or p_name.lower() == "priority":
+                        options = p.get("options", [])
+                        if options:
+                            return options
+            except Exception:
+                pass
+
+        # Live schema fetch from Notion API
+        schema_res = NotionService.fetch_database_schema(config.api_token, config.database_id)
+        if schema_res.get("success"):
+            props = schema_res.get("properties", [])
+            for p in props:
+                p_name = p.get("name", "")
+                if p_name.lower() == target_prop_name.lower() or p_name.lower() == "priority":
+                    options = p.get("options", [])
+                    if options:
+                        return options
+
+        if field_mapping and field_mapping.value_mappings_json:
+            try:
+                val_map = json.loads(field_mapping.value_mappings_json)
+                mapped_vals = list(val_map.values())
+                if mapped_vals:
+                    return mapped_vals
+            except Exception:
+                pass
+
+        return ["HIGH", "MEDIUM", "LOW"]
+
+    @staticmethod
     def analyze_email(email_msg: EmailMessage, db: Session) -> TaskCandidate:
         """Analyze email using configured AI provider or smart fallback heuristic engine."""
         ai_settings = db.query(AISettings).first()
         provider = ai_settings.provider if ai_settings else "mock"
         api_key = ai_settings.api_key if ai_settings else ""
 
+        priority_options = AIService.get_priority_options_from_notion(db)
+
         analysis = None
 
         if provider == "openai" and api_key:
-            analysis = AIService._analyze_openai(email_msg, api_key, ai_settings.model_name or "gpt-4o-mini")
+            analysis = AIService._analyze_openai(email_msg, api_key, ai_settings.model_name or "gpt-4o-mini", priority_options)
         elif provider == "gemini" and api_key:
-            analysis = AIService._analyze_gemini(email_msg, api_key, ai_settings.model_name)
+            analysis = AIService._analyze_gemini(email_msg, api_key, ai_settings.model_name, priority_options)
         elif provider == "groq" and api_key:
-            analysis = AIService._analyze_groq(email_msg, api_key, ai_settings.model_name)
+            analysis = AIService._analyze_groq(email_msg, api_key, ai_settings.model_name, priority_options)
         
         if not analysis:
-            analysis = AIService._analyze_heuristic(email_msg)
+            analysis = AIService._analyze_heuristic(email_msg, priority_options)
+
+        # Extract real HTTP/HTTPS URL from email body if present
+        http_url = None
+        if email_msg and email_msg.body_text:
+            extracted_links = re.findall(r'https?://[^\s<>\"\'\(\)]+', email_msg.body_text)
+            for link in extracted_links:
+                link_lower = link.lower()
+                if not any(ignore_kw in link_lower for ignore_kw in ["unsubscribe", "privacy", "opt-out", "preferences"]):
+                    http_url = link
+                    break
+            if not http_url and extracted_links:
+                http_url = extracted_links[0]
 
         existing_candidate = db.query(TaskCandidate).filter(TaskCandidate.email_id == email_msg.id).first()
         if existing_candidate:
             existing_candidate.title = analysis["title"]
             existing_candidate.summary = analysis["summary"]
-            existing_candidate.importance = analysis["importance"]
             existing_candidate.is_task = analysis["is_task"]
             existing_candidate.priority = analysis["priority"]
             existing_candidate.start_date = analysis.get("start_date")
             existing_candidate.deadline = analysis["deadline"]
+            existing_candidate.source_url = http_url
             candidate = existing_candidate
         else:
             candidate = TaskCandidate(
                 email_id=email_msg.id,
                 title=analysis["title"],
                 summary=analysis["summary"],
-                importance=analysis["importance"],
                 is_task=analysis["is_task"],
                 priority=analysis["priority"],
                 start_date=analysis.get("start_date"),
                 deadline=analysis["deadline"],
+                source_url=http_url,
                 status="PENDING"
             )
             db.add(candidate)
@@ -159,8 +213,11 @@ class AIService:
         return candidate
 
     @staticmethod
-    def _analyze_heuristic(email_msg: EmailMessage) -> Dict[str, Any]:
+    def _analyze_heuristic(email_msg: EmailMessage, priority_options: list[str] = None) -> Dict[str, Any]:
         """Smart heuristic NLP engine for email task candidate extraction."""
+        if not priority_options:
+            priority_options = ["HIGH", "MEDIUM", "LOW"]
+
         subject = email_msg.subject or ""
         body = email_msg.body_text or ""
         sender = email_msg.sender or ""
@@ -174,15 +231,16 @@ class AIService:
 
         is_task = has_action and not is_newsletter
         
+        high_match = next((opt for opt in priority_options if "high" in opt.lower() or "urgent" in opt.lower() or "p1" in opt.lower()), None)
+        medium_match = next((opt for opt in priority_options if "med" in opt.lower() or "normal" in opt.lower() or "p2" in opt.lower()), None)
+        low_match = next((opt for opt in priority_options if "low" in opt.lower() or "p3" in opt.lower()), None)
+        
         if "invoice" in full_text or "urgent" in full_text or "asap" in full_text:
-            importance = "HIGH"
-            priority = "HIGH"
+            priority = high_match or priority_options[0]
         elif is_task:
-            importance = "MEDIUM"
-            priority = "MEDIUM"
+            priority = medium_match or (priority_options[1] if len(priority_options) > 1 else priority_options[0])
         else:
-            importance = "LOW"
-            priority = "LOW"
+            priority = low_match or priority_options[-1]
 
         deadline = None
         date_patterns = [
@@ -228,7 +286,6 @@ class AIService:
         return {
             "title": clean_title,
             "summary": summary[:300],
-            "importance": importance,
             "is_task": is_task,
             "priority": priority,
             "start_date": start_date,
@@ -242,22 +299,24 @@ class AIService:
         return clean_title or "No Subject"
 
     @staticmethod
-    def _analyze_openai(email_msg: EmailMessage, api_key: str, model_name: str) -> Optional[Dict[str, Any]]:
+    def _analyze_openai(email_msg: EmailMessage, api_key: str, model_name: str, priority_options: list[str] = None) -> Optional[Dict[str, Any]]:
         """Call OpenAI Chat Completions API for task analysis."""
+        options_str = ", ".join(f'"{opt}"' for opt in (priority_options or ["HIGH", "MEDIUM", "LOW"]))
         prompt = f"""Analyze the following email and return a JSON object with task details:
 Subject: {email_msg.subject}
 From: {email_msg.sender}
 Body: {email_msg.body_text}
 
+Allowed Priority Options synced from Notion Database: [{options_str}]
+
 JSON Schema:
 {{
   "is_task": boolean,
-  "importance": "HIGH" | "MEDIUM" | "LOW",
-  "priority": "HIGH" | "MEDIUM" | "LOW",
+  "priority": MUST be one of [{options_str}],
   "title": "Actionable task title",
   "summary": "Brief 1-2 sentence summary",
-  "start_date": "Extracted start date e.g. 10 Aug or null",
-  "deadline": "Extracted due date string e.g. 12 Aug or null"
+  "start_date": "Extracted start date in ISO YYYY-MM-DD format (e.g. 2026-08-04) or null",
+  "deadline": "Extracted due date in ISO YYYY-MM-DD format (e.g. 2026-08-04) or null"
 }}
 Return ONLY valid JSON.
 """
@@ -281,58 +340,63 @@ Return ONLY valid JSON.
         return None
 
     @staticmethod
-    def _analyze_gemini(email_msg: EmailMessage, api_key: str, model_name: str = None) -> Optional[Dict[str, Any]]:
+    def _analyze_gemini(email_msg: EmailMessage, api_key: str, model_name: str = None, priority_options: list[str] = None) -> Optional[Dict[str, Any]]:
         """Call Gemini REST API for task analysis using gemini-3.1-flash-lite."""
         model = model_name or "gemini-3.1-flash-lite"
+        options_str = ", ".join(f'"{opt}"' for opt in (priority_options or ["HIGH", "MEDIUM", "LOW"]))
         prompt = f"""Analyze the following email and return a JSON object with task details:
 Subject: {email_msg.subject}
 From: {email_msg.sender}
 Body: {email_msg.body_text}
 
+Allowed Priority Options synced from Notion Database: [{options_str}]
+
 JSON Schema:
 {{
   "is_task": boolean,
-  "importance": "HIGH" | "MEDIUM" | "LOW",
-  "priority": "HIGH" | "MEDIUM" | "LOW",
+  "priority": MUST be one of [{options_str}],
   "title": "Actionable task title",
   "summary": "Brief 1-2 sentence summary",
-  "start_date": "Extracted start date e.g. 10 Aug or null",
-  "deadline": "Extracted due date string e.g. 12 Aug or null"
+  "start_date": "Extracted start date in ISO YYYY-MM-DD format (e.g. 2026-08-04) or null",
+  "deadline": "Extracted due date in ISO YYYY-MM-DD format (e.g. 2026-08-04) or null"
 }}
-Return ONLY raw valid JSON without markdown wrapping.
+Return ONLY valid JSON wrapped in ```json ```.
 """
         try:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
-            payload = {
-                "contents": [{"parts": [{"text": prompt}]}]
-            }
-            response = httpx.post(url, json=payload, timeout=10.0)
+            payload = {"contents": [{"parts": [{"text": prompt}]}]}
+            response = httpx.post(url, json=payload, timeout=12.0)
             if response.status_code == 200:
-                text = response.json()["candidates"][0]["content"]["parts"][0]["text"]
-                text = text.replace("```json", "").replace("```", "").strip()
+                data = response.json()
+                text = data["candidates"][0]["content"]["parts"][0]["text"]
+                match = re.search(r'```json\s*(\{.*?\})\s*```', text, re.DOTALL)
+                if match:
+                    return json.loads(match.group(1))
                 return json.loads(text)
         except Exception as e:
-            print(f"Gemini analysis error with model {model}: {e}")
+            print(f"Gemini analysis error: {e}")
         return None
 
     @staticmethod
-    def _analyze_groq(email_msg: EmailMessage, api_key: str, model_name: str = None) -> Optional[Dict[str, Any]]:
-        """Call Groq OpenAI-compatible REST API for task analysis."""
+    def _analyze_groq(email_msg: EmailMessage, api_key: str, model_name: str = None, priority_options: list[str] = None) -> Optional[Dict[str, Any]]:
+        """Call Groq Cloud API for task analysis."""
         model = model_name or "llama-3.3-70b-versatile"
+        options_str = ", ".join(f'"{opt}"' for opt in (priority_options or ["HIGH", "MEDIUM", "LOW"]))
         prompt = f"""Analyze the following email and return a JSON object with task details:
 Subject: {email_msg.subject}
 From: {email_msg.sender}
 Body: {email_msg.body_text}
 
+Allowed Priority Options synced from Notion Database: [{options_str}]
+
 JSON Schema:
 {{
   "is_task": boolean,
-  "importance": "HIGH" | "MEDIUM" | "LOW",
-  "priority": "HIGH" | "MEDIUM" | "LOW",
+  "priority": MUST be one of [{options_str}],
   "title": "Actionable task title",
   "summary": "Brief 1-2 sentence summary",
-  "start_date": "Extracted start date e.g. 10 Aug or null",
-  "deadline": "Extracted due date string e.g. 12 Aug or null"
+  "start_date": "Extracted start date in ISO YYYY-MM-DD format (e.g. 2026-08-04) or null",
+  "deadline": "Extracted due date in ISO YYYY-MM-DD format (e.g. 2026-08-04) or null"
 }}
 Return ONLY valid JSON.
 """
@@ -352,5 +416,5 @@ Return ONLY valid JSON.
                 content = response.json()["choices"][0]["message"]["content"]
                 return json.loads(content)
         except Exception as e:
-            print(f"Groq analysis error with model {model}: {e}")
+            print(f"Groq analysis error: {e}")
         return None

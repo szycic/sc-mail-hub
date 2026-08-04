@@ -1,12 +1,19 @@
 import imaplib
 import email
+import json
+import re
+import os
+import logging
 from email.header import decode_header
 from datetime import datetime, timezone, timedelta
-import json
+from pathlib import Path
 from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
 from sc_mail_hub.models import EmailAccount, EmailMessage
 from sc_mail_hub.config import settings
+
+logger = logging.getLogger("sc_mail_hub.email_service")
+logging.basicConfig(level=logging.INFO)
 
 # Preset demo sample emails for rapid testing matching user request diagram
 SAMPLE_EMAILS = [
@@ -104,104 +111,128 @@ class EmailService:
         fetched_messages = []
         mail = None
         try:
+            logger.info(f"📧 [IMAP] Connecting to {host}:{port} for account '{account.email_address}'...")
             mail = imaplib.IMAP4_SSL(host, port, timeout=settings.IMAP_SOCKET_TIMEOUT_SECONDS)
             mail.login(username, password)
             status, _ = mail.select("inbox")
             if status != "OK":
+                logger.error(f"❌ [IMAP] Failed to select INBOX for {account.email_address}")
                 mail.logout()
                 return []
+
+            logger.info(f"🔑 [IMAP] Successfully logged in to {username}. INBOX selected. Current last_uid: {account.last_uid}")
 
             current_uid_validity = EmailService._get_uid_validity(mail)
             if account.uid_validity and current_uid_validity and account.uid_validity != current_uid_validity:
+                logger.warning(f"⚠️ [IMAP] UIDValidity changed for {account.email_address}. Resetting last_uid.")
                 account.last_uid = None
 
-            if account.last_uid is not None:
-                search_clause = f"UID {max(1, int(account.last_uid) + 1)}:*"
+            if account.last_uid is not None and int(account.last_uid) > 0:
+                last_uid_int = int(account.last_uid)
+                search_clause = f"UID {last_uid_int + 1}:*"
+                logger.info(f"🔍 [IMAP] Searching incremental emails with clause: '{search_clause}'")
+                status, response = mail.uid("search", None, search_clause)
+                if status != "OK":
+                    logger.error(f"❌ [IMAP] Search failed for clause '{search_clause}'")
+                    mail.logout()
+                    return []
+                raw_tokens = response[0].split() if response and response[0] else []
+                # Strictly filter out UIDs <= last_uid (prevent IMAP fallback return of last message)
+                uid_tokens = [t for t in raw_tokens if t.decode("utf-8", errors="ignore").isdigit() and int(t.decode("utf-8", errors="ignore")) > last_uid_int]
             else:
-                since_date = (datetime.now(timezone.utc) - timedelta(days=max(1, settings.IMAP_INITIAL_LOOKBACK_DAYS))).strftime("%d-%b-%Y")
-                search_clause = f'SINCE "{since_date}"'
+                logger.info(f"🔍 [IMAP] Initial fetch: searching ALL messages...")
+                status, response = mail.uid("search", None, "ALL")
+                if status != "OK":
+                    logger.error(f"❌ [IMAP] Initial search ALL failed")
+                    mail.logout()
+                    return []
+                uid_tokens = response[0].split() if response and response[0] else []
 
-            status, response = mail.uid("search", None, search_clause)
-            if status != "OK":
-                mail.logout()
-                return []
-
-            uid_tokens = response[0].split() if response and response[0] else []
+            # CRITICAL: Always cap to newest IMAP_MAX_FETCH_PER_SYNC (15) emails max per fetch
             if len(uid_tokens) > settings.IMAP_MAX_FETCH_PER_SYNC:
+                logger.info(f"⚡ Capping fetch list from {len(uid_tokens)} to newest {settings.IMAP_MAX_FETCH_PER_SYNC} messages.")
                 uid_tokens = uid_tokens[-settings.IMAP_MAX_FETCH_PER_SYNC:]
 
             max_seen_uid = int(account.last_uid or 0)
 
-            for uid_token in uid_tokens:
-                uid_str = uid_token.decode("utf-8", errors="ignore")
-                try:
-                    uid_int = int(uid_str)
-                except Exception:
-                    continue
+            if uid_tokens:
+                uid_strs = [t.decode("utf-8", errors="ignore") for t in uid_tokens if t.decode("utf-8", errors="ignore").isdigit()]
+                for u_str in uid_strs:
+                    max_seen_uid = max(max_seen_uid, int(u_str))
 
-                max_seen_uid = max(max_seen_uid, uid_int)
+                if uid_strs:
+                    uid_sequence = ",".join(uid_strs)
+                    logger.info(f"📦 [IMAP] Batch fetching {len(uid_strs)} message(s) (UIDs: {uid_sequence})...")
+                    res, msg_data = mail.uid("fetch", uid_sequence, "(RFC822)")
+                    if res == "OK" and msg_data:
+                        for response_part in msg_data:
+                            if isinstance(response_part, tuple):
+                                msg_bytes = response_part[1]
+                                uid_match = re.search(rb'^(\d+)\s*\(', response_part[0])
+                                extracted_uid = int(uid_match.group(1).decode("utf-8")) if uid_match else 0
 
-                res, msg_data = mail.uid("fetch", uid_str, "(RFC822)")
-                if res != "OK":
-                    continue
-                for response_part in msg_data:
-                    if isinstance(response_part, tuple):
-                        msg = email.message_from_bytes(response_part[1])
-                        subject = EmailService._decode_header_str(msg["Subject"])
-                        sender = EmailService._decode_header_str(msg["From"])
-                        msg_id = msg.get("Message-ID", f"imap-{account.id}-{uid_str}")
+                                msg = email.message_from_bytes(msg_bytes)
+                                subject = EmailService._decode_header_str(msg["Subject"])
+                                sender = EmailService._decode_header_str(msg["From"])
+                                to_header = EmailService._decode_header_str(msg["To"])
+                                recipient = to_header if to_header else account.email_address
+                                msg_id = msg.get("Message-ID", f"imap-{account.id}-{extracted_uid or max_seen_uid}")
 
-                        body = ""
-                        if msg.is_multipart():
-                            for part in msg.walk():
-                                content_type = part.get_content_type()
-                                content_disposition = str(part.get("Content-Disposition"))
-                                if content_type == "text/plain" and "attachment" not in content_disposition:
-                                    payload = part.get_payload(decode=True)
+                                body = ""
+                                if msg.is_multipart():
+                                    for part in msg.walk():
+                                        content_type = part.get_content_type()
+                                        content_disposition = str(part.get("Content-Disposition"))
+                                        if content_type == "text/plain" and "attachment" not in content_disposition:
+                                            payload = part.get_payload(decode=True)
+                                            if payload:
+                                                body = payload.decode(part.get_content_charset() or "utf-8", errors="replace")
+                                            break
+                                else:
+                                    payload = msg.get_payload(decode=True)
                                     if payload:
-                                        body = payload.decode(part.get_content_charset() or "utf-8", errors="replace")
-                                    break
-                        else:
-                            payload = msg.get_payload(decode=True)
-                            if payload:
-                                body = payload.decode(msg.get_content_charset() or "utf-8", errors="replace")
+                                        body = payload.decode(msg.get_content_charset() or "utf-8", errors="replace")
 
-                        date_header = msg.get("Date")
-                        received_dt = None
-                        if date_header:
-                            try:
-                                received_dt = email.utils.parsedate_to_datetime(date_header)
-                            except Exception:
-                                pass
-                        if not received_dt:
-                            received_dt = datetime.now(timezone.utc)
+                                date_header = msg.get("Date")
+                                received_dt = None
+                                if date_header:
+                                    try:
+                                        received_dt = email.utils.parsedate_to_datetime(date_header)
+                                    except Exception:
+                                        pass
+                                if not received_dt:
+                                    received_dt = datetime.now(timezone.utc)
 
-                        existing = db.query(EmailMessage).filter(EmailMessage.message_id == msg_id).first()
-                        if not existing:
-                            email_record = EmailMessage(
-                                account_id=account.id,
-                                email_uid=uid_int,
-                                message_id=msg_id,
-                                sender=sender,
-                                recipient=account.email_address,
-                                subject=subject or "No Subject",
-                                body_text=body or subject or "",
-                                received_at=received_dt,
-                                is_processed=False
-                            )
-                            db.add(email_record)
-                            fetched_messages.append(email_record)
-                        elif existing.account_id == account.id and not existing.email_uid:
-                            existing.email_uid = uid_int
-            
+                                existing = db.query(EmailMessage).filter(EmailMessage.message_id == msg_id).first()
+                                if not existing:
+                                    email_record = EmailMessage(
+                                        account_id=account.id,
+                                        email_uid=extracted_uid or max_seen_uid,
+                                        message_id=msg_id,
+                                        sender=sender,
+                                        recipient=recipient,
+                                        subject=subject or "No Subject",
+                                        body_text=body or subject or "",
+                                        received_at=received_dt,
+                                        is_processed=False
+                                    )
+                                    db.add(email_record)
+                                    fetched_messages.append(email_record)
+                                    logger.info(f"  📥 [IMAP] Downloaded email ID={msg_id} | Subject='{subject}' | From='{sender}'")
+                                elif existing.account_id == account.id and not existing.email_uid:
+                                    existing.email_uid = extracted_uid or max_seen_uid
+            else:
+                logger.info(f"ℹ️ [IMAP] No new messages found for {account.email_address}")
+
             if current_uid_validity:
                 account.uid_validity = current_uid_validity
             if max_seen_uid > 0:
                 account.last_uid = max_seen_uid
             account.last_synced_at = datetime.now(timezone.utc)
             db.commit()
+            logger.info(f"🎉 [IMAP] Sync complete for {account.email_address}: {len(fetched_messages)} new message(s) saved. last_uid={account.last_uid}")
         except Exception as err:
-            print(f"Error fetching IMAP for {account.email_address}: {err}")
+            logger.error(f"❌ [IMAP ERROR] Exception fetching emails for {account.email_address}: {err}", exc_info=True)
         finally:
             if mail:
                 try:
@@ -233,3 +264,84 @@ class EmailService:
             else:
                 result.append(str(bytes_or_str))
         return "".join(result)
+
+    @staticmethod
+    def get_pdf_dir() -> Path:
+        """Get absolute path to static pdfs storage directory."""
+        pdf_dir = Path(__file__).resolve().parent.parent / "static" / "pdfs"
+        pdf_dir.mkdir(parents=True, exist_ok=True)
+        return pdf_dir
+
+    @staticmethod
+    def generate_email_pdf(email_msg: EmailMessage) -> str:
+        """Generate a clean PDF report of the raw email message supporting Polish characters and return relative URL path."""
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, HRFlowable
+        from reportlab.pdfbase import pdfmetrics
+        from reportlab.pdfbase.ttfonts import TTFont
+
+        pdf_dir = EmailService.get_pdf_dir()
+        pdf_filename = f"email_{email_msg.id}.pdf"
+        pdf_path = str(pdf_dir / pdf_filename)
+
+        try:
+            # Register a TrueType font for Polish and UTF-8 Unicode character support
+            font_candidates = [
+                "/usr/share/fonts/TTF/DejaVuSans.ttf",
+                "/usr/share/fonts/noto/NotoSans-Regular.ttf",
+                "/usr/share/fonts/Adwaita/AdwaitaSans-Regular.ttf",
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+                "/usr/share/fonts/truetype/freefont/FreeSans.ttf"
+            ]
+
+            pdf_font_name = "Helvetica"
+            for f_path in font_candidates:
+                p = Path(f_path)
+                if p.exists():
+                    try:
+                        font_alias = f"Unicode_{p.name}"
+                        pdfmetrics.registerFont(TTFont(font_alias, str(p)))
+                        pdf_font_name = font_alias
+                        break
+                    except Exception:
+                        pass
+
+            subject_text = email_msg.subject or 'No Subject'
+            doc = SimpleDocTemplate(
+                pdf_path,
+                pagesize=A4,
+                title=subject_text,
+                author=email_msg.sender or "SC Mail Hub",
+                leftMargin=36,
+                rightMargin=36,
+                topMargin=36,
+                bottomMargin=36
+            )
+            styles = getSampleStyleSheet()
+
+            title_style = ParagraphStyle('EmailTitle', parent=styles['Heading1'], fontName=pdf_font_name, fontSize=16, leading=20, textColor='#1e293b')
+            meta_style = ParagraphStyle('EmailMeta', parent=styles['Normal'], fontName=pdf_font_name, fontSize=10, leading=14, textColor='#64748b')
+            body_style = ParagraphStyle('EmailBody', parent=styles['Normal'], fontName=pdf_font_name, fontSize=11, leading=16, textColor='#0f172a')
+
+            story = []
+            story.append(Paragraph(f"<b>Subject:</b> {subject_text}", title_style))
+            story.append(Spacer(1, 10))
+            story.append(Paragraph(f"<b>From:</b> {email_msg.sender or 'Unknown'}", meta_style))
+            story.append(Paragraph(f"<b>To:</b> {email_msg.recipient or ''}", meta_style))
+            date_str = email_msg.received_at.strftime("%Y-%m-%d %H:%M UTC") if email_msg.received_at else ""
+            story.append(Paragraph(f"<b>Date:</b> {date_str}", meta_style))
+            story.append(Spacer(1, 10))
+            story.append(HRFlowable(width="100%", thickness=1, color="#cbd5e1", spaceAfter=15))
+
+            body_text = email_msg.body_text or ""
+            safe_body = body_text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br/>")
+            story.append(Paragraph(safe_body, body_style))
+
+            doc.build(story)
+            logger.info(f"📄 Generated PDF with Polish character support for email {email_msg.id}: {pdf_path}")
+        except Exception as e:
+            logger.error(f"❌ Failed to generate PDF for email {email_msg.id}: {e}")
+
+        return f"/static/pdfs/{pdf_filename}"
