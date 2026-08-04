@@ -130,7 +130,7 @@ class AISettingsUpdate(BaseModel):
     """Request payload for updating AI provider credentials and settings."""
     provider: str  # 'mock', 'openai', 'gemini', 'groq'
     api_key: Optional[str] = None
-    model_name: Optional[str] = "gpt-4o-mini"
+    model_name: Optional[str] = None
     custom_prompt: Optional[str] = None
 
 
