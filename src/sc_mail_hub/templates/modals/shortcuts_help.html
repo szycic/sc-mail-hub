@@ -1,0 +1,127 @@
+<!-- Keyboard Shortcuts Help Modal -->
+<div id="shortcuts-modal" class="modal-overlay" onclick="closeShortcutsModal(event)">
+  <div class="modal-card" style="max-width:540px;" onclick="event.stopPropagation()">
+    <div class="modal-header" style="align-items:center;">
+      <div style="display:flex; align-items:center; gap:10px;">
+        <span style="font-size:22px;">⌨️</span>
+        <div>
+          <h3 style="font-size:18px; color:var(--text-main); margin:0;">Keyboard Shortcuts</h3>
+          <span style="font-size:12px; color:var(--text-dim);">Quick actions for inbox management</span>
+        </div>
+      </div>
+      <button class="modal-close-btn" onclick="closeShortcutsModal()">&times;</button>
+    </div>
+    <div class="modal-body" style="padding:20px;">
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px;">
+        <div>
+          <h4
+            style="font-size:11px; font-weight:700; text-transform:uppercase; color:var(--accent-primary, #6366f1); letter-spacing:0.8px; margin-bottom:12px;">
+            Navigation & Focus</h4>
+          <ul
+            style="list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:10px; font-size:13px;">
+            <li style="display:flex; justify-content:space-between; align-items:center;">
+              <span style="color:var(--text-main);">Next Candidate</span>
+              <span><kbd>Tab</kbd> / <kbd>k</kbd></span>
+            </li>
+            <li style="display:flex; justify-content:space-between; align-items:center;">
+              <span style="color:var(--text-main);">Previous Candidate</span>
+              <span><kbd>Shift+Tab</kbd> / <kbd>j</kbd></span>
+            </li>
+            <li style="display:flex; justify-content:space-between; align-items:center;">
+              <span style="color:var(--text-main);">Prev / Next Page</span>
+              <span><kbd>&larr;</kbd> / <kbd>&rarr;</kbd></span>
+            </li>
+            <li style="display:flex; justify-content:space-between; align-items:center;">
+              <span style="color:var(--text-main);">Focus Search</span>
+              <span><kbd>/</kbd></span>
+            </li>
+            <li style="display:flex; justify-content:space-between; align-items:center;">
+              <span style="color:var(--text-main);">Status Tabs</span>
+              <span><kbd>1</kbd> &ndash; <kbd>5</kbd></span>
+            </li>
+            <li style="display:flex; justify-content:space-between; align-items:center;">
+              <span style="color:var(--text-main);">Unfocus Candidate</span>
+              <span style="font-size:11px; color:var(--text-dim);">Click / Esc</span>
+            </li>
+          </ul>
+        </div>
+        <div>
+          <h4
+            style="font-size:11px; font-weight:700; text-transform:uppercase; color:var(--accent-primary, #6366f1); letter-spacing:0.8px; margin-bottom:12px;">
+            Selection & Bulk Actions</h4>
+          <ul
+            style="list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:10px; font-size:13px;">
+            <li style="display:flex; justify-content:space-between; align-items:center;">
+              <span style="color:var(--text-main);">Toggle Checkbox</span>
+              <span><kbd>Space</kbd> / <kbd>x</kbd></span>
+            </li>
+            <li style="display:flex; justify-content:space-between; align-items:center;">
+              <span style="color:var(--text-main);">Range Select</span>
+              <span><kbd>Shift+j</kbd> / <kbd>Shift+k</kbd></span>
+            </li>
+            <li style="display:flex; justify-content:space-between; align-items:center;">
+              <span style="color:var(--text-main);">Select / Deselect All</span>
+              <span><kbd>A</kbd></span>
+            </li>
+            <li style="display:flex; justify-content:space-between; align-items:center;">
+              <span style="color:var(--text-main);">Bulk Process</span>
+              <span><kbd>Shift+P</kbd></span>
+            </li>
+            <li style="display:flex; justify-content:space-between; align-items:center;">
+              <span style="color:var(--text-main);">Bulk Reprocess</span>
+              <span><kbd>Shift+R</kbd></span>
+            </li>
+            <li style="display:flex; justify-content:space-between; align-items:center;">
+              <span style="color:var(--text-main);">Bulk Ignore</span>
+              <span><kbd>Shift+I</kbd></span>
+            </li>
+            <li style="display:flex; justify-content:space-between; align-items:center;">
+              <span style="color:var(--text-main);">Bulk Unignore</span>
+              <span><kbd>Shift+U</kbd></span>
+            </li>
+          </ul>
+        </div>
+      </div>
+
+      <div style="margin-top:20px; border-top:1px solid var(--border-color); padding-top:16px;">
+        <h4
+          style="font-size:11px; font-weight:700; text-transform:uppercase; color:var(--accent-primary, #6366f1); letter-spacing:0.8px; margin-bottom:12px;">
+          Actions for Focused Candidate</h4>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px 20px; font-size:13px;">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span style="color:var(--text-main);">Process</span>
+            <span><kbd>p</kbd></span>
+          </div>
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span style="color:var(--text-main);">Process & Review</span>
+            <span><kbd>o</kbd> / <kbd>Enter</kbd></span>
+          </div>
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span style="color:var(--text-main);">Reprocess</span>
+            <span><kbd>r</kbd></span>
+          </div>
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span style="color:var(--text-main);">Preview Email</span>
+            <span><kbd>e</kbd></span>
+          </div>
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span style="color:var(--text-main);">Ignore</span>
+            <span><kbd>i</kbd> / <kbd>Del</kbd></span>
+          </div>
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span style="color:var(--text-main);">Unignore</span>
+            <span><kbd>u</kbd></span>
+          </div>
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span style="color:var(--text-main);">Shortcuts Help</span>
+            <span><kbd>?</kbd></span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer" style="display:flex; justify-content:space-between; align-items:center;">
+      <span style="font-size:11px; color:var(--text-dim);">Press <kbd>?</kbd> anytime to open this modal</span>
+      <button class="btn btn-outline btn-sm" onclick="closeShortcutsModal()">Close</button>
+    </div>
+  </div>
+</div>

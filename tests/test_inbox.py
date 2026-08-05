@@ -77,4 +77,12 @@ def test_ignore_candidate_during_background_sync():
         assert ignore_res.json()["message"] == "Task candidate marked as ignored"
 
 
+def test_inbox_candidate_search():
+    res = client.get("/api/inbox/candidates?search=test")
+    assert res.status_code == 200
+    data = res.json()
+    assert "items" in data
+
+
+
 

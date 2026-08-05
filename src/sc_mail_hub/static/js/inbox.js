@@ -300,7 +300,33 @@ function setFocusedCandidateIndex(index, scroll = true) {
   });
 }
 
+function openShortcutsModal() {
+  const modal = document.getElementById("shortcuts-modal");
+  if (modal) modal.classList.add("active");
+}
+
+function closeShortcutsModal(e) {
+  if (!e || e.target === document.getElementById("shortcuts-modal") || e.target.closest(".modal-close-btn") || e.target.closest(".btn")) {
+    const modal = document.getElementById("shortcuts-modal");
+    if (modal) modal.classList.remove("active");
+  }
+}
+
 function handleCandidateKeyboardShortcuts(e) {
+  if (e.key === "Escape") {
+    const activeModals = document.querySelectorAll(".modal-overlay.active, .modal.active, .modal-backdrop.active");
+    if (activeModals.length > 0) {
+      e.preventDefault();
+      activeModals.forEach(m => m.classList.remove("active"));
+      return;
+    }
+    clearCandidateFocus();
+    if (document.activeElement && typeof document.activeElement.blur === "function") {
+      document.activeElement.blur();
+    }
+    return;
+  }
+
   const activeEl = document.activeElement;
   if (activeEl && (
     activeEl.tagName === "INPUT" ||
@@ -311,7 +337,36 @@ function handleCandidateKeyboardShortcuts(e) {
     return;
   }
 
-  const modalActive = document.querySelector(".modal.active, .modal-backdrop.active") ||
+  const shortcutsModal = document.getElementById("shortcuts-modal");
+  const isShortcutsModalActive = shortcutsModal && shortcutsModal.classList.contains("active");
+
+  if (e.key === "?") {
+    e.preventDefault();
+    if (isShortcutsModalActive) {
+      closeShortcutsModal();
+    } else {
+      openShortcutsModal();
+    }
+    return;
+  }
+
+  if (e.key === "/") {
+    e.preventDefault();
+    const searchInput = document.getElementById("filter-search");
+    if (searchInput) {
+      searchInput.focus();
+      searchInput.select();
+    }
+    return;
+  }
+
+  if (e.key === "1") { e.preventDefault(); filterInbox("PENDING"); return; }
+  if (e.key === "2") { e.preventDefault(); filterInbox("AI_PROCESSED"); return; }
+  if (e.key === "3") { e.preventDefault(); filterInbox("CREATED"); return; }
+  if (e.key === "4") { e.preventDefault(); filterInbox("IGNORED"); return; }
+  if (e.key === "5") { e.preventDefault(); filterInbox("ALL"); return; }
+
+  const modalActive = document.querySelector(".modal.active, .modal-backdrop.active, .modal-overlay.active") ||
     (document.getElementById("task-review-modal")?.style.display === "flex") ||
     (document.getElementById("email-preview-modal")?.style.display === "flex");
   if (modalActive) return;
@@ -319,8 +374,44 @@ function handleCandidateKeyboardShortcuts(e) {
   const inboxTab = document.getElementById("tab-inbox");
   if (!inboxTab || !inboxTab.classList.contains("active")) return;
 
+  if (e.key === "ArrowLeft") {
+    e.preventDefault();
+    if (currentPage > 1) changePage(currentPage - 1);
+    return;
+  }
+
+  if (e.key === "ArrowRight") {
+    e.preventDefault();
+    if (currentPage < totalPages) changePage(currentPage + 1);
+    return;
+  }
+
   const cards = Array.from(document.querySelectorAll("#candidates-list .candidate-card"));
   if (!cards || cards.length === 0) return;
+
+  // --- Bulk Action Shortcuts (Shift + Key) ---
+  if (e.shiftKey) {
+    if (e.key === "P" || e.key === "p") {
+      e.preventDefault();
+      if (typeof bulkProcessCandidates === "function") bulkProcessCandidates();
+      return;
+    }
+    if (e.key === "I" || e.key === "i") {
+      e.preventDefault();
+      if (typeof bulkIgnoreCandidates === "function") bulkIgnoreCandidates();
+      return;
+    }
+    if (e.key === "R" || e.key === "r") {
+      e.preventDefault();
+      if (typeof bulkReprocessCandidates === "function") bulkReprocessCandidates();
+      return;
+    }
+    if (e.key === "U" || e.key === "u") {
+      e.preventDefault();
+      if (typeof bulkUnignoreCandidates === "function") bulkUnignoreCandidates();
+      return;
+    }
+  }
 
   if (e.key === "Tab") {
     e.preventDefault();
@@ -338,17 +429,65 @@ function handleCandidateKeyboardShortcuts(e) {
 
   if (e.key === "ArrowUp" || e.key === "j" || e.key === "J") {
     e.preventDefault();
-    let nextIdx = focusedCandidateIndex - 1;
+    let currentIdx = focusedCandidateIndex;
+    if (currentIdx < 0) currentIdx = 0;
+
+    let nextIdx = currentIdx - 1;
     if (nextIdx < 0) nextIdx = 0;
-    setFocusedCandidateIndex(nextIdx);
+
+    if (e.shiftKey) {
+      if (cards[currentIdx]) {
+        const cb = cards[currentIdx].querySelector(".candidate-select-cb");
+        if (cb) {
+          cb.checked = true;
+          const id = parseInt(cb.getAttribute("data-id"), 10);
+          if (id) toggleCandidateSelection(id, true);
+        }
+      }
+      setFocusedCandidateIndex(nextIdx);
+      if (cards[nextIdx]) {
+        const cb = cards[nextIdx].querySelector(".candidate-select-cb");
+        if (cb) {
+          cb.checked = true;
+          const id = parseInt(cb.getAttribute("data-id"), 10);
+          if (id) toggleCandidateSelection(id, true);
+        }
+      }
+    } else {
+      setFocusedCandidateIndex(nextIdx);
+    }
     return;
   }
 
   if (e.key === "ArrowDown" || e.key === "k" || e.key === "K") {
     e.preventDefault();
-    let nextIdx = focusedCandidateIndex + 1;
+    let currentIdx = focusedCandidateIndex;
+    if (currentIdx < 0) currentIdx = 0;
+
+    let nextIdx = currentIdx + 1;
     if (nextIdx >= cards.length) nextIdx = cards.length - 1;
-    setFocusedCandidateIndex(nextIdx);
+
+    if (e.shiftKey) {
+      if (cards[currentIdx]) {
+        const cb = cards[currentIdx].querySelector(".candidate-select-cb");
+        if (cb) {
+          cb.checked = true;
+          const id = parseInt(cb.getAttribute("data-id"), 10);
+          if (id) toggleCandidateSelection(id, true);
+        }
+      }
+      setFocusedCandidateIndex(nextIdx);
+      if (cards[nextIdx]) {
+        const cb = cards[nextIdx].querySelector(".candidate-select-cb");
+        if (cb) {
+          cb.checked = true;
+          const id = parseInt(cb.getAttribute("data-id"), 10);
+          if (id) toggleCandidateSelection(id, true);
+        }
+      }
+    } else {
+      setFocusedCandidateIndex(nextIdx);
+    }
     return;
   }
 
@@ -382,29 +521,92 @@ function handleCandidateKeyboardShortcuts(e) {
     return;
   }
 
+  function getActiveCandidate() {
+    let idx = focusedCandidateIndex;
+    if (idx < 0 || idx >= cards.length) idx = 0;
+    if (cards[idx]) {
+      const cardId = parseInt(cards[idx].getAttribute("data-id"), 10);
+      return currentCandidates.find(c => c.id === cardId);
+    }
+    return null;
+  }
+
+  if (!e.shiftKey && (e.key === "i" || e.key === "I" || e.key === "Delete")) {
+    e.preventDefault();
+    const cand = getActiveCandidate();
+    if (cand) {
+      if (cand.status === "IGNORED") {
+        if (typeof unignoreCandidate === "function") unignoreCandidate(cand.id);
+      } else {
+        if (typeof ignoreCandidate === "function") ignoreCandidate(cand.id);
+      }
+    }
+    return;
+  }
+
+  if (!e.shiftKey && (e.key === "u" || e.key === "U")) {
+    e.preventDefault();
+    const cand = getActiveCandidate();
+    if (cand && typeof unignoreCandidate === "function") {
+      unignoreCandidate(cand.id);
+    }
+    return;
+  }
+
+  if (e.key === "p" || e.key === "P") {
+    e.preventDefault();
+    const cand = getActiveCandidate();
+    if (cand && typeof processCandidateWithAi === "function") {
+      processCandidateWithAi(cand.id);
+    }
+    return;
+  }
+
+  if (e.key === "o" || e.key === "O") {
+    e.preventDefault();
+    const cand = getActiveCandidate();
+    if (cand && typeof openTaskReviewModal === "function") {
+      openTaskReviewModal(cand.id);
+    }
+    return;
+  }
+
+  if (e.key === "e" || e.key === "E") {
+    e.preventDefault();
+    const cand = getActiveCandidate();
+    if (cand && typeof previewEmail === "function") {
+      previewEmail(cand.id);
+    }
+    return;
+  }
+
+  if (e.key === "r" || e.key === "R") {
+    e.preventDefault();
+    const cand = getActiveCandidate();
+    if (cand && typeof reprocessCandidateWithAi === "function") {
+      reprocessCandidateWithAi(cand.id);
+    }
+    return;
+  }
+
   if (e.key === "Enter" || e.key === "o" || e.key === "O") {
     if (activeEl && (activeEl.tagName === "BUTTON" || activeEl.tagName === "A")) {
       return;
     }
     e.preventDefault();
-    let idx = focusedCandidateIndex;
-    if (idx < 0 || idx >= cards.length) idx = 0;
-    if (cards[idx]) {
-      const cardId = parseInt(cards[idx].getAttribute("data-id"), 10);
-      const cand = currentCandidates.find(c => c.id === cardId);
-      if (cand) {
-        if (cand.status === "PENDING" || cand.status === "AI_PROCESSED") {
-          if (typeof openTaskReviewModal === "function") {
-            openTaskReviewModal(cand.id);
-          }
-        } else if (cand.status === "IGNORED") {
-          if (typeof unignoreCandidate === "function") {
-            unignoreCandidate(cand.id);
-          }
-        } else {
-          if (typeof previewEmail === "function") {
-            previewEmail(cand.id);
-          }
+    const cand = getActiveCandidate();
+    if (cand) {
+      if (cand.status === "PENDING" || cand.status === "AI_PROCESSED") {
+        if (typeof openTaskReviewModal === "function") {
+          openTaskReviewModal(cand.id);
+        }
+      } else if (cand.status === "IGNORED") {
+        if (typeof unignoreCandidate === "function") {
+          unignoreCandidate(cand.id);
+        }
+      } else {
+        if (typeof previewEmail === "function") {
+          previewEmail(cand.id);
         }
       }
     }

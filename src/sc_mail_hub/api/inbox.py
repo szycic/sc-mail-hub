@@ -333,7 +333,8 @@ def get_candidates(
         if search and search.strip():
             q = search.strip().lower()
             body_txt = (email_msg.body_text or "").lower() if email_msg else ""
-            search_haystack = f"{out.title or ''} {out.summary or ''} {out.category or ''} {out.sender or ''} {out.subject or ''} {out.recipient or ''} {body_txt}".lower()
+            priority_txt = getattr(out, "priority", "") or ""
+            search_haystack = f"{out.title or ''} {out.summary or ''} {priority_txt} {out.sender or ''} {out.subject or ''} {out.recipient or ''} {body_txt}".lower()
             if q not in search_haystack:
                 continue
 

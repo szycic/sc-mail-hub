@@ -9,7 +9,7 @@ It is intended for personal or local-network use and does not include production
 ## Features
 
 - **Multi-Account IMAP Sync**: Connect and manage multiple email accounts with background polling, automatic UID tracking, and instant manual sync triggers.
-- **AI-Powered Task Extraction**: Automatically analyze email body content using OpenAI, Google Gemini, Groq, or local heuristic fallback models to extract task title, summary, priority, start date, deadline, category, and source URLs.
+- **AI-Powered Task Extraction**: Automatically analyze email body content using OpenAI, Google Gemini, Groq, or local heuristic fallback models to extract task title, summary, priority, start date, deadline, and source URLs.
 - **Flexible Notion Database Integration**: Map task candidate fields (title, summary, priority, due date, sender, email date, message URL, PDF attachment) to custom Notion database properties with custom value mapping options.
 - **PDF Email Attachment Export**: Automatically render raw emails into formatted PDF documents and attach them directly to created Notion task database items.
 - **Inbox Pipeline Management**: Structured 4-stage workflow (`PENDING`, `AI_PROCESSED`, `CREATED`, `IGNORED`) with single and batch actions, recipient classification (`DIRECT` vs `MAILING_GROUP`), keyword search, and flexible sorting.
