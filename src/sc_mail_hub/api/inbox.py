@@ -498,7 +498,9 @@ def unignore_candidate(candidate_id: int, db: Session = Depends(get_db)):
         target_status = "PENDING"
 
     candidate.status = target_status
+    candidate.auto_ignored_reason = None
     if target_status == "AI_PROCESSED":
+
         msg = "Task candidate restored to AI Processed stage"
     else:
         msg = "Task candidate restored to Pending Emails"

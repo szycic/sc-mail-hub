@@ -75,7 +75,9 @@ class TaskCandidate(Base):
     project = Column(String(100), nullable=True)        # e.g. "ESN Poland"
     status = Column(String(20), default="PENDING", index=True)      # 'PENDING', 'AI_PROCESSED', 'CREATED', 'IGNORED'
     previous_status = Column(String(20), nullable=True) # Tracks exact stage prior to IGNORED status for unignoring
+    auto_ignored_reason = Column(String(255), nullable=True) # Stores rule name if automatically ignored
     notion_page_id = Column(String(255), nullable=True)
+
     notion_url = Column(String(500), nullable=True)
     created_at = Column(DateTime, default=_utc_now)
     updated_at = Column(DateTime, default=_utc_now, onupdate=_utc_now)

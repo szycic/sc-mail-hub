@@ -135,8 +135,10 @@ def test_auto_ignore_on_email_ingestion():
         # Create candidate via AIService
         cand = AIService.ensure_candidate_from_email(email_msg, db)
 
-        # Verify candidate automatically created with IGNORED status
+        # Verify candidate automatically created with IGNORED status & reason tag
         assert cand.status == "IGNORED"
         assert cand.previous_status == "PENDING"
+        assert cand.auto_ignored_reason == "Auto-Ignored: Marketing Domain"
     finally:
         db.close()
+

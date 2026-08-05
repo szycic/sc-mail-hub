@@ -46,6 +46,8 @@ class TaskCandidateOut(TaskCandidateBase):
     recipient_type: Optional[str] = None  # 'DIRECT' or 'MAILING_GROUP'
     subject: Optional[str] = None
     received_at: Optional[str] = None
+    auto_ignored_reason: Optional[str] = None
+
 
     model_config = ConfigDict(from_attributes=True)
 

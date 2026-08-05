@@ -1,10 +1,10 @@
 <section id="tab-admin" class="tab-content">
   <form id="admin-settings-form" onsubmit="saveAdminSettings(event)">
 
-    <!-- Card 1: Refresh & Sync Settings -->
+    <!-- Card 1: System Settings & Retention -->
     <div class="card" style="margin-bottom: 24px;">
       <div class="card-title">
-        <span>⚙️ Refresh & Sync Settings</span>
+        <span>⚙️ System Settings</span>
       </div>
 
       <div style="display:flex; flex-direction:column; gap:20px;">
@@ -63,16 +63,7 @@
             </select>
           </div>
         </div>
-      </div>
-    </div>
 
-    <!-- Card 2: Auto-Purge & Retention -->
-    <div class="card" style="margin-bottom: 24px;">
-      <div class="card-title">
-        <span>🗑️ Auto-Purge & Retention</span>
-      </div>
-
-      <div style="display:flex; flex-direction:column; gap:20px;">
         <!-- Purge Synced to Notion -->
         <div
           style="background:rgba(255,255,255,0.02); padding:16px; border-radius:8px; border:1px solid rgba(255,255,255,0.06);">
@@ -127,31 +118,36 @@
           </div>
         </div>
       </div>
-    </div>
 
-    <div style="display:flex; justify-content:flex-end; margin-bottom: 24px;">
-      <button type="submit" class="btn btn-primary" id="btn-save-admin-settings">
-        💾 Save Settings
-      </button>
+      <div style="display:flex; justify-content:flex-end; margin-top: 20px;">
+        <button type="submit" class="btn btn-primary" id="btn-save-admin-settings">
+          💾 Save Settings
+        </button>
+      </div>
     </div>
   </form>
+
 
   <!-- Card 3: Auto-Ignore Rules -->
   <div class="card" style="margin-bottom: 24px;">
     <div class="card-title">
-      <span>🛡️ Automated Auto-Ignore Rules</span>
+      <span>🛡️ Auto-Ignore Rules</span>
     </div>
     <p style="font-size:13px; color:var(--text-dim); margin-bottom:16px;">
-      Automatically flag newsletters, system notifications, or marketing emails matching specific domains, keywords, or regex as <strong>IGNORED</strong> during email ingestion.
+      Automatically flag newsletters, system notifications, or marketing emails matching specific domains, keywords, or
+      regex as <strong>IGNORED</strong> during email ingestion.
     </p>
 
     <!-- Create Rule Form -->
-    <form id="rule-create-form" onsubmit="addAutoIgnoreRule(event)" style="background:rgba(255,255,255,0.02); padding:16px; border-radius:8px; border:1px solid rgba(255,255,255,0.06); margin-bottom:20px;">
-      <h4 style="font-size:14px; font-weight:600; color:var(--text-main); margin-bottom:12px;">➕ Add New Rule</h4>
-      <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:12px; margin-bottom:12px;">
+    <form id="rule-create-form" onsubmit="addAutoIgnoreRule(event)"
+      style="background:rgba(255,255,255,0.02); padding:16px; border-radius:8px; border:1px solid rgba(255,255,255,0.06); margin-bottom:20px;">
+      <h4 style="font-size:14px; font-weight:600; color:var(--text-main); margin-bottom:12px;">Add New Rule</h4>
+      <div
+        style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:12px; margin-bottom:12px;">
         <div>
           <label style="font-size:12px; color:var(--text-muted); display:block; margin-bottom:4px;">Rule Name</label>
-          <input type="text" id="rule-name" class="text-input" placeholder="e.g. Google Newsletters" required style="width:100%;">
+          <input type="text" id="rule-name" class="text-input" placeholder="e.g. Google Newsletters" required
+            style="width:100%;">
         </div>
         <div>
           <label style="font-size:12px; color:var(--text-muted); display:block; margin-bottom:4px;">Match Type</label>
@@ -163,8 +159,10 @@
           </select>
         </div>
         <div>
-          <label style="font-size:12px; color:var(--text-muted); display:block; margin-bottom:4px;">Matching Pattern</label>
-          <input type="text" id="rule-pattern" class="text-input" placeholder="e.g. google.com" required style="width:100%;">
+          <label style="font-size:12px; color:var(--text-muted); display:block; margin-bottom:4px;">Matching
+            Pattern</label>
+          <input type="text" id="rule-pattern" class="text-input" placeholder="e.g. google.com" required
+            style="width:100%;">
         </div>
       </div>
       <div style="display:flex; justify-content:flex-end;">
@@ -176,9 +174,11 @@
 
     <!-- Active Rules List -->
     <div style="margin-bottom:20px;">
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:10px;">
-        <h4 style="font-size:14px; font-weight:600; color:var(--text-main);">📋 Active Rules Table</h4>
-        <button type="button" class="btn btn-outline btn-sm" onclick="seedPresetAutoIgnoreRules()" style="font-size:12px;">
+      <div
+        style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:10px;">
+        <h4 style="font-size:14px; font-weight:600; color:var(--text-main);">Active Rules Table</h4>
+        <button type="button" class="btn btn-outline btn-sm" onclick="seedPresetAutoIgnoreRules()"
+          style="font-size:12px;">
           🌱 Load Preset Typical Rules
         </button>
       </div>
@@ -208,12 +208,17 @@
     </div>
 
     <!-- Rule Test Tool -->
-    <div style="background:rgba(255,255,255,0.02); padding:16px; border-radius:8px; border:1px solid rgba(255,255,255,0.06);">
-      <h4 style="font-size:14px; font-weight:600; color:var(--text-main); margin-bottom:8px;">🧪 Rule Match Tester</h4>
-      <p style="font-size:12px; color:var(--text-dim); margin-bottom:12px;">Test sample email headers against configured rules without saving candidates.</p>
-      <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:12px; margin-bottom:12px;">
-        <input type="text" id="test-rule-sender" class="text-input" placeholder="Sample Sender (e.g. no-reply@google.com)" style="width:100%;">
-        <input type="text" id="test-rule-subject" class="text-input" placeholder="Sample Subject (e.g. Weekly Newsletter)" style="width:100%;">
+    <div
+      style="background:rgba(255,255,255,0.02); padding:16px; border-radius:8px; border:1px solid rgba(255,255,255,0.06);">
+      <h4 style="font-size:14px; font-weight:600; color:var(--text-main); margin-bottom:8px;">Rule Match Tester</h4>
+      <p style="font-size:12px; color:var(--text-dim); margin-bottom:12px;">Test sample email headers against configured
+        rules without saving candidates.</p>
+      <div
+        style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:12px; margin-bottom:12px;">
+        <input type="text" id="test-rule-sender" class="text-input"
+          placeholder="Sample Sender (e.g. no-reply@google.com)" style="width:100%;">
+        <input type="text" id="test-rule-subject" class="text-input"
+          placeholder="Sample Subject (e.g. Weekly Newsletter)" style="width:100%;">
       </div>
       <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
         <button type="button" class="btn btn-outline" onclick="testAutoIgnoreRules()" style="padding:8px 16px;">

@@ -65,6 +65,7 @@ def init_db():
             "ALTER TABLE email_accounts ADD COLUMN last_uid INTEGER",
             "ALTER TABLE email_accounts ADD COLUMN uid_validity VARCHAR(64)",
             "ALTER TABLE email_messages ADD COLUMN email_uid INTEGER",
+            "ALTER TABLE task_candidates ADD COLUMN auto_ignored_reason VARCHAR(255)",
         ]
         for sql in migrations:
             try:

@@ -775,9 +775,11 @@ function renderCandidates(candidates) {
           <div>
             ${isCreated ? `<span class="btn btn-sm btn-outline" style="color:#10b981; border-color:#10b981;">✓ Synced to Notion</span>` : ''}
             ${isAiProcessed ? `<span class="btn btn-sm btn-outline" style="color:#60a5fa; border-color:#60a5fa;">✨ Ready for Notion</span>` : ''}
-            ${isIgnored ? `<span class="btn btn-sm btn-outline" style="color:#64748b;">Ignored</span>` : ''}
+            ${isIgnored ? (c.auto_ignored_reason ? `<span class="btn btn-sm btn-outline" style="color:#ef4444; border-color:rgba(239,68,68,0.5); background:rgba(239,68,68,0.1);" title="${escapeHtml(c.auto_ignored_reason)}">🛡️ Auto-Ignored</span>` : `<span class="btn btn-sm btn-outline" style="color:#64748b;">Ignored</span>`) : ''}
           </div>
         </div>
+
+
 
         ${(isCreated || isAiProcessed) && c.summary ? `<p class="candidate-summary">${escapeHtml(c.summary)}</p>` : ''}
 

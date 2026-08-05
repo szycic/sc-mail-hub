@@ -29,6 +29,7 @@ class AIService:
             matched_rule = RuleService.evaluate_auto_ignore_rules(email_msg.sender, email_msg.subject, db)
             initial_status = "IGNORED" if matched_rule else "PENDING"
             prev_status = "PENDING" if matched_rule else None
+            auto_reason = f"Auto-Ignored: {matched_rule.name}" if matched_rule else None
 
             candidate = TaskCandidate(
                 email_id=email_msg.id,
@@ -39,8 +40,10 @@ class AIService:
                 start_date=None,
                 deadline=None,
                 status=initial_status,
-                previous_status=prev_status
+                previous_status=prev_status,
+                auto_ignored_reason=auto_reason
             )
+
             db.add(candidate)
 
         db.commit()
