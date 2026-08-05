@@ -139,7 +139,24 @@ class SystemSettings(Base):
     auto_purge_ignored_enabled = Column(Boolean, default=False)
     purge_ignored_days = Column(Integer, default=30)
 
+    # Web Push VAPID Configuration
+    vapid_private_key = Column(Text, nullable=True)
+    vapid_public_key = Column(Text, nullable=True)
+    vapid_claims_sub = Column(String(255), default="mailto:admin@sc-mail-hub.local")
+
     updated_at = Column(DateTime, default=_utc_now, onupdate=_utc_now)
+
+
+class PushSubscription(Base):
+    """Stores Web Push API subscriptions for client devices to receive push notifications when app is closed."""
+    __tablename__ = "push_subscriptions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    endpoint = Column(Text, unique=True, nullable=False, index=True)
+    p256dh = Column(Text, nullable=False)
+    auth = Column(Text, nullable=False)
+    user_agent = Column(String(255), nullable=True)
+    created_at = Column(DateTime, default=_utc_now)
 
 
 class AutoIgnoreRule(Base):

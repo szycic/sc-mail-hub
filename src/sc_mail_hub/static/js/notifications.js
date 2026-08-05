@@ -2,12 +2,104 @@
  * Notification management module for SC Mail Hub.
  *
  * Handles Service Worker registration, permission requests,
- * notifications when pending count increases and is non-zero,
- * native app icon badging, and in-app toasts.
+ * Web Push subscription (enabling closed-app notifications via VAPID),
+ * native app icon badging, and notification dispatching.
  */
 
 let previousPendingCount = null;
 let swRegistration = null;
+
+/**
+ * Converts a URL-safe Base64 string to a Uint8Array required by pushManager.subscribe.
+ *
+ * @param {string} base64String
+ * @returns {Uint8Array}
+ */
+function urlBase64ToUint8Array(base64String) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
+
+/**
+ * Subscribes the current browser/device to Web Push API notifications via backend VAPID public key.
+ *
+ * @param {ServiceWorkerRegistration} reg
+ */
+async function subscribeUserToPush(reg) {
+  if (!reg || !("pushManager" in reg)) {
+    console.warn("Push messaging is not supported in this browser environment.");
+    return;
+  }
+
+  if (!("Notification" in window) || Notification.permission !== "granted") {
+    return;
+  }
+
+  try {
+    // Fetch current active VAPID public key from backend
+    const response = await fetch("/api/notifications/vapid-public-key");
+    if (!response.ok) {
+      throw new Error("Failed to fetch VAPID public key");
+    }
+    const data = await response.json();
+    const serverKeyUint8 = urlBase64ToUint8Array(data.public_key);
+
+    let subscription = await reg.pushManager.getSubscription();
+
+    // Verify if existing subscription matches current VAPID key
+    if (subscription && subscription.options && subscription.options.applicationServerKey) {
+      const existingKeyUint8 = new Uint8Array(subscription.options.applicationServerKey);
+      let isMatch = existingKeyUint8.length === serverKeyUint8.length;
+      if (isMatch) {
+        for (let i = 0; i < serverKeyUint8.length; i++) {
+          if (existingKeyUint8[i] !== serverKeyUint8[i]) {
+            isMatch = false;
+            break;
+          }
+        }
+      }
+
+      if (!isMatch) {
+        console.log("VAPID key mismatch detected. Unsubscribing stale subscription...");
+        await subscription.unsubscribe();
+        subscription = null;
+      }
+    }
+
+    if (!subscription) {
+      subscription = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: serverKeyUint8
+      });
+    }
+
+    // Register subscription endpoint and keys with backend database
+    const subJson = subscription.toJSON();
+    await fetch("/api/notifications/subscribe", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        endpoint: subJson.endpoint,
+        keys: {
+          p256dh: subJson.keys.p256dh,
+          auth: subJson.keys.auth
+        }
+      })
+    });
+
+    console.log("Web Push subscription active for closed-app notifications.");
+  } catch (err) {
+    console.warn("Failed to subscribe device to Web Push:", err);
+  }
+}
 
 // Initialize Service Worker and request notification permissions
 function initNotifications() {
@@ -17,6 +109,10 @@ function initNotifications() {
       .catch(() => navigator.serviceWorker.register("/static/js/sw.js"))
       .then((reg) => {
         swRegistration = reg;
+        reg.update().catch(() => {});
+        if (Notification.permission === "granted") {
+          subscribeUserToPush(reg);
+        }
       })
       .catch((err) => {
         console.warn("ServiceWorker registration failed:", err);
@@ -26,7 +122,13 @@ function initNotifications() {
   // Request notification permission automatically on first user click if state is default
   if ("Notification" in window && Notification.permission === "default") {
     const requestPerm = () => {
-      Notification.requestPermission().catch(() => {});
+      Notification.requestPermission()
+        .then((perm) => {
+          if (perm === "granted" && swRegistration) {
+            subscribeUserToPush(swRegistration);
+          }
+        })
+        .catch(() => {});
     };
     document.addEventListener("click", requestPerm, { once: true });
   }
@@ -76,7 +178,7 @@ function handlePendingNotifications(pendingCount) {
     const message = formatPendingNotificationMessage(count);
     const title = "Mail Hub";
 
-    // Desktop Browser Notification
+    // Desktop Browser Notification (when open)
     if ("Notification" in window && Notification.permission === "granted") {
       const options = {
         body: message,

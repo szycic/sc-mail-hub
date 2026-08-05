@@ -62,6 +62,7 @@ async function loadAdminSettings() {
 
     setupAutoRefreshTimer();
     await loadAutoIgnoreRules();
+    await checkPushNotificationStatus();
   } catch (err) {
     console.error("Error loading admin settings:", err);
   }
@@ -352,5 +353,56 @@ function setupAutoRefreshTimer() {
         loadCandidates();
       }
     }, intervalMs);
+  }
+}
+
+async function checkPushNotificationStatus() {
+  const statusEl = document.getElementById("push-status-info");
+  if (!statusEl) return;
+
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+    statusEl.innerHTML = `<span style="color:#ef4444;">⚠️ Web Push is not supported in this browser environment.</span>`;
+    return;
+  }
+
+  if (Notification.permission !== "granted") {
+    statusEl.innerHTML = `<span style="color:#f59e0b;">⚠️ Notification permission is ${Notification.permission}. Click anywhere or grant permissions to enable.</span>`;
+    return;
+  }
+
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    if (sub) {
+      statusEl.innerHTML = `<span style="color:#10b981;">✅ Web Push active! Closed-app notifications are enabled on this device.</span>`;
+    } else {
+      statusEl.innerHTML = `<span style="color:#f59e0b;">⏳ Service worker ready. Registering push subscription...</span>`;
+      if (typeof subscribeUserToPush === "function") {
+        await subscribeUserToPush(reg);
+        const subCheck = await reg.pushManager.getSubscription();
+        if (subCheck) {
+          statusEl.innerHTML = `<span style="color:#10b981;">✅ Web Push active! Closed-app notifications are enabled on this device.</span>`;
+        }
+      }
+    }
+  } catch (err) {
+    statusEl.innerHTML = `<span style="color:#ef4444;">⚠️ Web Push status error: ${escapeHtml(err.message)}</span>`;
+  }
+}
+
+async function sendTestPushNotification() {
+  try {
+    showToast("Dispatching test Web Push notification...", "info");
+    const res = await fetch("/api/notifications/test", { method: "POST" });
+    const data = await res.json();
+    if (res.ok) {
+      const stats = data.result || {};
+      showToast(`Test push sent! Delivered: ${stats.successful || 0}, Failed: ${stats.failed || 0}`, "success");
+      await checkPushNotificationStatus();
+    } else {
+      showToast(data.detail || "Failed to send test push notification", "error");
+    }
+  } catch (err) {
+    showToast(`Push test error: ${err.message}`, "error");
   }
 }

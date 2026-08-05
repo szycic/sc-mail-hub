@@ -16,6 +16,7 @@ from sc_mail_hub.schemas import TaskCandidateOut, TaskCandidateUpdate, Paginated
 from sc_mail_hub.services.email_service import EmailService
 from sc_mail_hub.services.ai_service import AIService
 from sc_mail_hub.services.notion_service import NotionService
+from sc_mail_hub.services.push_service import PushService
 
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Set
@@ -118,6 +119,12 @@ async def notify_sync_completed_async():
             "stats": stats["counts"],
             "last_synced_at": stats["last_synced_at"]
         })
+        pending = stats["counts"].get("PENDING", 0)
+        if pending > 0:
+            verb = "is" if pending == 1 else "are"
+            noun = "email" if pending == 1 else "emails"
+            msg = f"There {verb} {pending} pending {noun}"
+            PushService.broadcast_push_notification(db, title="Mail Hub", body=msg, url="/inbox")
     except Exception:
         pass
     finally:

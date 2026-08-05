@@ -212,3 +212,18 @@ class RuleTestResponse(BaseModel):
     matched: bool
     matched_rule: Optional[AutoIgnoreRuleOut] = None
 
+
+# --- Push Subscription Schemas ---
+class PushSubscriptionKeys(BaseModel):
+    p256dh: str
+    auth: str
+
+
+class PushSubscriptionCreate(BaseModel):
+    endpoint: str
+    keys: PushSubscriptionKeys
+
+
+class PushSubscriptionUnsubscribe(BaseModel):
+    endpoint: str
+

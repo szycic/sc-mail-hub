@@ -66,6 +66,9 @@ def init_db():
             "ALTER TABLE email_accounts ADD COLUMN uid_validity VARCHAR(64)",
             "ALTER TABLE email_messages ADD COLUMN email_uid INTEGER",
             "ALTER TABLE task_candidates ADD COLUMN auto_ignored_reason VARCHAR(255)",
+            "ALTER TABLE system_settings ADD COLUMN vapid_private_key TEXT",
+            "ALTER TABLE system_settings ADD COLUMN vapid_public_key TEXT",
+            "ALTER TABLE system_settings ADD COLUMN vapid_claims_sub VARCHAR(255) DEFAULT 'mailto:admin@sc-mail-hub.local'",
         ]
         for sql in migrations:
             try:

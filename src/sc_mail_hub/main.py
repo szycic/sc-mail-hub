@@ -20,7 +20,7 @@ from sc_mail_hub.database import engine, Base, init_db, SessionLocal
 from sc_mail_hub.models import NotionConfig, NotionFieldMapping, AISettings, EmailAccount, SystemSettings, TaskCandidate, EmailMessage, AutoIgnoreRule
 from sc_mail_hub.services.email_service import EmailService
 from sc_mail_hub.services.ai_service import AIService
-from sc_mail_hub.api import inbox, accounts, notion, ai, admin, rules
+from sc_mail_hub.api import inbox, accounts, notion, ai, admin, rules, notifications
 
 logger = logging.getLogger("sc_mail_hub.main")
 init_db()
@@ -252,6 +252,7 @@ app.include_router(notion.router)
 app.include_router(ai.router)
 app.include_router(admin.router)
 app.include_router(rules.router)
+app.include_router(notifications.router)
 
 
 
