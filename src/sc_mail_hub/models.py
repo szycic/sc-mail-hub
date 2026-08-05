@@ -138,3 +138,23 @@ class SystemSettings(Base):
     purge_ignored_days = Column(Integer, default=30)
 
     updated_at = Column(DateTime, default=_utc_now, onupdate=_utc_now)
+
+
+class AutoIgnoreRule(Base):
+    """Stores user-defined auto-ignore rules for incoming email ingestion.
+    
+    Rule Types:
+    - 'sender_domain': Matches domain in sender email address (e.g. 'google.com', 'newsletter.org')
+    - 'sender_contains': Substring search in sender field (e.g. 'no-reply@', 'marketing')
+    - 'subject_keyword': Substring search in subject line (case-insensitive, e.g. 'newsletter', 'digest')
+    - 'subject_regex': Regular expression matching against subject line
+    """
+    __tablename__ = "auto_ignore_rules"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), nullable=False)
+    rule_type = Column(String(50), nullable=False)  # 'sender_domain', 'sender_contains', 'subject_keyword', 'subject_regex'
+    pattern = Column(String(255), nullable=False)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=_utc_now)
+

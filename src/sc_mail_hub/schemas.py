@@ -168,3 +168,45 @@ class SystemSettingsUpdate(BaseModel):
     purge_synced_days: Optional[int] = Field(None, ge=1, le=365)
     auto_purge_ignored_enabled: Optional[bool] = None
     purge_ignored_days: Optional[int] = Field(None, ge=1, le=365)
+
+
+# --- Auto-Ignore Rule Schemas ---
+class AutoIgnoreRuleCreate(BaseModel):
+    """Request payload for creating an auto-ignore rule."""
+    name: str
+    rule_type: str  # 'sender_domain', 'sender_contains', 'subject_keyword', 'subject_regex'
+    pattern: str
+    is_active: bool = True
+
+
+class AutoIgnoreRuleUpdate(BaseModel):
+    """Request payload for updating an existing auto-ignore rule."""
+    name: Optional[str] = None
+    rule_type: Optional[str] = None
+    pattern: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class AutoIgnoreRuleOut(BaseModel):
+    """Response payload for an auto-ignore rule."""
+    id: int
+    name: str
+    rule_type: str
+    pattern: str
+    is_active: bool
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class RuleTestRequest(BaseModel):
+    """Request payload for testing text against auto-ignore rules."""
+    sender: Optional[str] = ""
+    subject: Optional[str] = ""
+
+
+class RuleTestResponse(BaseModel):
+    """Response payload for auto-ignore rule test."""
+    matched: bool
+    matched_rule: Optional[AutoIgnoreRuleOut] = None
+

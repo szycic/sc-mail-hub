@@ -10,6 +10,7 @@ import httpx
 from typing import Dict, Any, Optional
 from sqlalchemy.orm import Session
 from sc_mail_hub.models import EmailMessage, TaskCandidate, AISettings
+from sc_mail_hub.services.rule_service import RuleService
 
 
 class AIService:
@@ -25,6 +26,10 @@ class AIService:
             existing_candidate.title = title or existing_candidate.title
             candidate = existing_candidate
         else:
+            matched_rule = RuleService.evaluate_auto_ignore_rules(email_msg.sender, email_msg.subject, db)
+            initial_status = "IGNORED" if matched_rule else "PENDING"
+            prev_status = "PENDING" if matched_rule else None
+
             candidate = TaskCandidate(
                 email_id=email_msg.id,
                 title=title,
@@ -33,13 +38,15 @@ class AIService:
                 priority=None,
                 start_date=None,
                 deadline=None,
-                status="PENDING"
+                status=initial_status,
+                previous_status=prev_status
             )
             db.add(candidate)
 
         db.commit()
         db.refresh(candidate)
         return candidate
+
 
     @staticmethod
     def test_ai_connection(provider: str, api_key: str, model_name: str) -> Dict[str, Any]:

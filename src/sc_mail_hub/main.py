@@ -17,17 +17,17 @@ from sqlalchemy.orm import Session
 
 from sc_mail_hub.config import settings
 from sc_mail_hub.database import engine, Base, init_db, SessionLocal
-from sc_mail_hub.models import NotionConfig, NotionFieldMapping, AISettings, EmailAccount, SystemSettings, TaskCandidate, EmailMessage
+from sc_mail_hub.models import NotionConfig, NotionFieldMapping, AISettings, EmailAccount, SystemSettings, TaskCandidate, EmailMessage, AutoIgnoreRule
 from sc_mail_hub.services.email_service import EmailService
 from sc_mail_hub.services.ai_service import AIService
-from sc_mail_hub.api import inbox, accounts, notion, ai, admin
+from sc_mail_hub.api import inbox, accounts, notion, ai, admin, rules
 
 logger = logging.getLogger("sc_mail_hub.main")
 init_db()
 
 
 def setup_defaults(db: Session):
-    """Seed initial default configurations for Notion, AI, and System settings if absent."""
+    """Seed initial default configurations for Notion, AI, System settings, and default Auto-Ignore rules if absent."""
     notion_cfg = db.query(NotionConfig).first()
     if not notion_cfg:
         notion_cfg = NotionConfig(
@@ -54,7 +54,62 @@ def setup_defaults(db: Session):
             ui_auto_refresh_interval_seconds=30
         ))
 
+    if db.query(AutoIgnoreRule).count() == 0:
+        default_rules = [
+            AutoIgnoreRule(
+                name="Automated System Notifications",
+                rule_type="sender_contains",
+                pattern="no-reply@",
+                is_active=True
+            ),
+            AutoIgnoreRule(
+                name="Promotional Newsletters",
+                rule_type="subject_keyword",
+                pattern="newsletter",
+                is_active=True
+            ),
+            AutoIgnoreRule(
+                name="Weekly / Daily Digests",
+                rule_type="subject_keyword",
+                pattern="digest",
+                is_active=True
+            ),
+            AutoIgnoreRule(
+                name="Google Service Announcements",
+                rule_type="sender_contains",
+                pattern="no-reply@google.com",
+                is_active=True
+            ),
+            AutoIgnoreRule(
+                name="LinkedIn Job Alerts & InMail",
+                rule_type="sender_domain",
+                pattern="linkedin.com",
+                is_active=True
+            ),
+            AutoIgnoreRule(
+                name="Security Codes & 2FA Emails",
+                rule_type="subject_keyword",
+                pattern="verification code",
+                is_active=True
+            ),
+            AutoIgnoreRule(
+                name="Automated System Monitoring",
+                rule_type="subject_regex",
+                pattern=r"(ALERT|STATUS|MONITORING)",
+                is_active=True
+            ),
+            AutoIgnoreRule(
+                name="Marketing Offers & Discounts",
+                rule_type="subject_keyword",
+                pattern="special offer",
+                is_active=True
+            )
+        ]
+        db.add_all(default_rules)
+
     db.commit()
+
+
 
 
 def purge_expired_candidates(db: Session):
@@ -193,6 +248,8 @@ app.include_router(accounts.router)
 app.include_router(notion.router)
 app.include_router(ai.router)
 app.include_router(admin.router)
+app.include_router(rules.router)
+
 
 
 @app.get("/")
