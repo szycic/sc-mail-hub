@@ -12,6 +12,7 @@ let totalPages = 1;
 let lastSyncedIso = null;
 let searchDebounceTimer = null;
 let selectedCandidateIds = new Set();
+let focusedCandidateIndex = -1;
 
 function initInboxStateFromUrl() {
   const params = new URLSearchParams(window.location.search);
@@ -262,8 +263,163 @@ function updateLastSyncedDisplay() {
   el.textContent = `Last synced: ${label}`;
 }
 
+function clearCandidateFocus() {
+  focusedCandidateIndex = -1;
+  const cards = document.querySelectorAll("#candidates-list .candidate-card");
+  cards.forEach(card => {
+    card.classList.remove("focused");
+    if (document.activeElement === card) {
+      card.blur();
+    }
+  });
+}
+
+function setFocusedCandidateIndex(index, scroll = true) {
+  const cards = Array.from(document.querySelectorAll("#candidates-list .candidate-card"));
+  if (!cards || cards.length === 0 || index < 0) {
+    clearCandidateFocus();
+    return;
+  }
+
+  if (index >= cards.length) index = cards.length - 1;
+
+  focusedCandidateIndex = index;
+
+  cards.forEach((card, i) => {
+    if (i === focusedCandidateIndex) {
+      card.classList.add("focused");
+      if (document.activeElement !== card && !card.contains(document.activeElement)) {
+        card.focus({ preventScroll: true });
+      }
+      if (scroll) {
+        card.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      }
+    } else {
+      card.classList.remove("focused");
+    }
+  });
+}
+
+function handleCandidateKeyboardShortcuts(e) {
+  const activeEl = document.activeElement;
+  if (activeEl && (
+    activeEl.tagName === "INPUT" ||
+    activeEl.tagName === "TEXTAREA" ||
+    activeEl.tagName === "SELECT" ||
+    activeEl.isContentEditable
+  )) {
+    return;
+  }
+
+  const modalActive = document.querySelector(".modal.active, .modal-backdrop.active") ||
+    (document.getElementById("task-review-modal")?.style.display === "flex") ||
+    (document.getElementById("email-preview-modal")?.style.display === "flex");
+  if (modalActive) return;
+
+  const inboxTab = document.getElementById("tab-inbox");
+  if (!inboxTab || !inboxTab.classList.contains("active")) return;
+
+  const cards = Array.from(document.querySelectorAll("#candidates-list .candidate-card"));
+  if (!cards || cards.length === 0) return;
+
+  if (e.key === "Tab") {
+    e.preventDefault();
+    if (e.shiftKey) {
+      let nextIdx = focusedCandidateIndex - 1;
+      if (nextIdx < 0) nextIdx = cards.length - 1;
+      setFocusedCandidateIndex(nextIdx);
+    } else {
+      let nextIdx = focusedCandidateIndex + 1;
+      if (nextIdx >= cards.length) nextIdx = 0;
+      setFocusedCandidateIndex(nextIdx);
+    }
+    return;
+  }
+
+  if (e.key === "ArrowUp" || e.key === "j" || e.key === "J") {
+    e.preventDefault();
+    let nextIdx = focusedCandidateIndex - 1;
+    if (nextIdx < 0) nextIdx = 0;
+    setFocusedCandidateIndex(nextIdx);
+    return;
+  }
+
+  if (e.key === "ArrowDown" || e.key === "k" || e.key === "K") {
+    e.preventDefault();
+    let nextIdx = focusedCandidateIndex + 1;
+    if (nextIdx >= cards.length) nextIdx = cards.length - 1;
+    setFocusedCandidateIndex(nextIdx);
+    return;
+  }
+
+  if (e.key === " " || e.key === "Spacebar" || e.key === "x" || e.key === "X") {
+    if (activeEl && (activeEl.tagName === "BUTTON" || activeEl.tagName === "A")) {
+      return;
+    }
+    e.preventDefault();
+    let idx = focusedCandidateIndex;
+    if (idx < 0 || idx >= cards.length) idx = 0;
+
+    if (cards[idx]) {
+      setFocusedCandidateIndex(idx, false);
+      const cb = cards[idx].querySelector(".candidate-select-cb");
+      if (cb) {
+        cb.checked = !cb.checked;
+        const id = parseInt(cb.getAttribute("data-id"), 10);
+        if (id) toggleCandidateSelection(id, cb.checked);
+      }
+    }
+    return;
+  }
+
+  if (e.key === "a" || e.key === "A") {
+    e.preventDefault();
+    const selectAllCb = document.getElementById("select-all-cb");
+    if (selectAllCb) {
+      selectAllCb.checked = !selectAllCb.checked;
+      toggleSelectAllCandidates(selectAllCb.checked);
+    }
+    return;
+  }
+
+  if (e.key === "Enter" || e.key === "o" || e.key === "O") {
+    if (activeEl && (activeEl.tagName === "BUTTON" || activeEl.tagName === "A")) {
+      return;
+    }
+    e.preventDefault();
+    let idx = focusedCandidateIndex;
+    if (idx < 0 || idx >= cards.length) idx = 0;
+    if (cards[idx]) {
+      const cardId = parseInt(cards[idx].getAttribute("data-id"), 10);
+      const cand = currentCandidates.find(c => c.id === cardId);
+      if (cand) {
+        if (cand.status === "PENDING" || cand.status === "AI_PROCESSED") {
+          if (typeof openTaskReviewModal === "function") {
+            openTaskReviewModal(cand.id);
+          }
+        } else if (cand.status === "IGNORED") {
+          if (typeof unignoreCandidate === "function") {
+            unignoreCandidate(cand.id);
+          }
+        } else {
+          if (typeof previewEmail === "function") {
+            previewEmail(cand.id);
+          }
+        }
+      }
+    }
+    return;
+  }
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   initSyncUpdatesWebSocket();
+  document.addEventListener("keydown", handleCandidateKeyboardShortcuts);
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest(".candidate-card")) {
+      clearCandidateFocus();
+    }
+  });
 });
 
 setInterval(updateLastSyncedDisplay, 10000);
@@ -368,6 +524,7 @@ function renderCandidates(candidates) {
   if (!listEl) return;
 
   if (!candidates || candidates.length === 0) {
+    focusedCandidateIndex = -1;
     listEl.innerHTML = `
       <div class="empty-state">
         <div class="empty-icon">📥</div>
@@ -382,7 +539,11 @@ function renderCandidates(candidates) {
     return;
   }
 
-  listEl.innerHTML = candidates.map(c => {
+  if (focusedCandidateIndex >= candidates.length) {
+    focusedCandidateIndex = candidates.length - 1;
+  }
+
+  listEl.innerHTML = candidates.map((c, index) => {
     const isCreated = c.status === "CREATED";
     const isIgnored = c.status === "IGNORED";
     const isAiProcessed = c.status === "AI_PROCESSED";
@@ -391,7 +552,7 @@ function renderCandidates(candidates) {
     const deadlineFmt = (isCreated || isAiProcessed) ? formatStandardDisplayDate(c.deadline) : "";
 
     return `
-      <div class="candidate-card" id="candidate-card-${c.id}">
+      <div class="candidate-card ${index === focusedCandidateIndex ? 'focused' : ''}" id="candidate-card-${c.id}" tabindex="0" data-id="${c.id}" data-index="${index}">
         <div class="candidate-header">
           <div style="display:flex; align-items:flex-start; gap:10px;">
             ${currentStatusFilter !== "ALL" ? `
@@ -469,6 +630,28 @@ function renderCandidates(candidates) {
       </div>
     `;
   }).join("");
+
+  listEl.onclick = function (e) {
+    const card = e.target.closest(".candidate-card");
+    if (card) {
+      const idx = parseInt(card.getAttribute("data-index"), 10);
+      if (!isNaN(idx)) {
+        if (!e.target.closest("button, input, a, select")) {
+          setFocusedCandidateIndex(idx, false);
+        }
+      }
+    }
+  };
+
+  listEl.onfocusin = function (e) {
+    const card = e.target.closest(".candidate-card");
+    if (card && e.target === card) {
+      const idx = parseInt(card.getAttribute("data-index"), 10);
+      if (!isNaN(idx) && idx !== focusedCandidateIndex) {
+        setFocusedCandidateIndex(idx, false);
+      }
+    }
+  };
 
   updateBulkActionUI();
 }
