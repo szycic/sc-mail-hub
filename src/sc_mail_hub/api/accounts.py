@@ -60,7 +60,7 @@ def sync_account(account_id: int, db: Session = Depends(get_db)):
     notify_sync_completed()
 
     return {
-        "message": f"Synced {len(new_messages)} emails. {task_count} candidates ready for review.",
+        "message": f"Synced {len(new_messages)} emails",
         "emails_synced": len(new_messages),
         "candidates_seeded": task_count
     }

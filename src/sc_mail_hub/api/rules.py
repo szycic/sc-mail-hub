@@ -135,3 +135,21 @@ def seed_default_rules(db: Session = Depends(get_db)):
     return db.query(AutoIgnoreRule).order_by(AutoIgnoreRule.id.asc()).all()
 
 
+from sc_mail_hub.api.inbox import notify_sync_completed
+
+
+@router.post("/apply")
+def apply_rules_now(db: Session = Depends(get_db)):
+    """Retroactively evaluate all active auto-ignore rules against existing task candidates."""
+    result = RuleService.apply_rules_to_existing_candidates(db)
+    ignored_count = result["ignored_count"]
+    evaluated_count = result["evaluated_count"]
+    notify_sync_completed()
+    return {
+        "message": f"Applied auto-ignore rules to {evaluated_count} candidate(s). {ignored_count} candidate(s) newly marked as IGNORED.",
+        "evaluated_count": evaluated_count,
+        "ignored_count": ignored_count
+    }
+
+
+

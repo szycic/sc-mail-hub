@@ -3,7 +3,7 @@
 import pytest
 from fastapi.testclient import TestClient
 from sc_mail_hub.main import app
-from sc_mail_hub.database import SessionLocal
+from conftest import TestingSessionLocal as SessionLocal
 from sc_mail_hub.models import AutoIgnoreRule, EmailMessage, TaskCandidate
 from sc_mail_hub.services.rule_service import RuleService
 from sc_mail_hub.services.ai_service import AIService
@@ -141,4 +141,88 @@ def test_auto_ignore_on_email_ingestion():
         assert cand.auto_ignored_reason == "Auto-Ignored: Marketing Domain"
     finally:
         db.close()
+
+
+def test_apply_rules_retroactively():
+    """Test applying auto-ignore rules retroactively to existing candidates while preserving CREATED (Notion-synced) candidates."""
+    db = SessionLocal()
+    try:
+        # 1. Create a normal pending email and candidate
+        email1 = EmailMessage(
+            sender="digest@spam.com",
+            recipient="me@sc-mail-hub.local",
+            subject="Weekly Spam Digest",
+            body_text="Spam text",
+            is_processed=False
+        )
+        db.add(email1)
+        db.commit()
+        db.refresh(email1)
+
+        cand1 = TaskCandidate(
+            email_id=email1.id,
+            title="Weekly Spam Digest",
+            status="PENDING"
+        )
+        db.add(cand1)
+        db.commit()
+
+        # 2. Create a candidate already synced to Notion (status CREATED, notion_page_id set)
+        email2 = EmailMessage(
+            sender="digest@spam.com",
+            recipient="me@sc-mail-hub.local",
+            subject="Synced Spam Digest",
+            body_text="Spam text",
+            is_processed=True
+        )
+        db.add(email2)
+        db.commit()
+        db.refresh(email2)
+
+        cand2 = TaskCandidate(
+            email_id=email2.id,
+            title="Synced Spam Digest",
+            status="CREATED",
+            notion_page_id="page_12345"
+        )
+        db.add(cand2)
+        db.commit()
+
+        # 3. Add an active auto-ignore rule matching 'spam.com'
+        rule = AutoIgnoreRule(
+            name="Spam Domain Filter",
+            rule_type="sender_domain",
+            pattern="spam.com",
+            is_active=True
+        )
+        db.add(rule)
+        db.commit()
+
+        cand1_id = cand1.id
+        cand2_id = cand2.id
+    finally:
+        db.close()
+
+    # 4. Trigger apply rules endpoint
+    apply_res = client.post("/api/rules/apply")
+    assert apply_res.status_code == 200
+    apply_data = apply_res.json()
+    assert apply_data["ignored_count"] >= 1
+
+    db2 = SessionLocal()
+    try:
+        updated_cand1 = db2.query(TaskCandidate).filter(TaskCandidate.id == cand1_id).first()
+        updated_cand2 = db2.query(TaskCandidate).filter(TaskCandidate.id == cand2_id).first()
+
+        # Pending candidate should be IGNORED
+        assert updated_cand1.status == "IGNORED"
+        assert updated_cand1.auto_ignored_reason == "Auto-Ignored: Spam Domain Filter"
+
+        # Notion-synced candidate MUST remain CREATED and not IGNORED
+        assert updated_cand2.status == "CREATED"
+        assert updated_cand2.notion_page_id == "page_12345"
+    finally:
+        db2.close()
+
+
 

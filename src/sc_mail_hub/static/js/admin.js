@@ -232,6 +232,43 @@ async function testAutoIgnoreRules() {
   }
 }
 
+async function applyAutoIgnoreRulesNow() {
+  const btn = document.getElementById("btn-apply-rules-now");
+  const origText = btn ? btn.innerHTML : "⚡ Apply Rules Now";
+
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = `⏳ Applying rules...`;
+  }
+
+  try {
+    const res = await fetch("/api/rules/apply", { method: "POST" });
+    const data = await res.json();
+    if (res.ok) {
+      const msg = data.ignored_count > 0 
+        ? `Applied rules! ${data.ignored_count} candidate(s) newly marked as IGNORED.`
+        : `Applied rules to ${data.evaluated_count} candidate(s). No new matches found.`;
+      showToast(msg, data.ignored_count > 0 ? "success" : "info");
+      await loadAutoIgnoreRules();
+      if (typeof loadInboxStats === "function") {
+        await loadInboxStats();
+      }
+      if (typeof loadCandidates === "function") {
+        await loadCandidates();
+      }
+    } else {
+      showToast(data.detail || "Failed to apply auto-ignore rules.", "error");
+    }
+  } catch (err) {
+    showToast(`Error applying rules: ${err.message}`, "error");
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = origText;
+    }
+  }
+}
+
 async function seedPresetAutoIgnoreRules() {
   try {
     const res = await fetch("/api/rules/seed-defaults", { method: "POST" });
@@ -300,9 +337,17 @@ function setupAutoRefreshTimer() {
     autoRefreshTimer = null;
   }
 
+  if (typeof initSyncUpdatesWebSocket === "function") {
+    initSyncUpdatesWebSocket();
+  }
+
   if (currentAdminSettings.ui_auto_refresh_enabled) {
-    const intervalMs = Math.max((currentAdminSettings.ui_auto_refresh_interval_seconds || 30) * 1000, 5000);
+    const intervalMs = Math.max((currentAdminSettings.ui_auto_refresh_interval_seconds || 30) * 1000, 10000);
+    // Fallback polling only if WebSocket is disconnected
     autoRefreshTimer = setInterval(() => {
+      if (typeof syncUpdatesWs !== "undefined" && syncUpdatesWs && syncUpdatesWs.readyState === WebSocket.OPEN) {
+        return; // Active WebSocket push handling updates; skip unnecessary HTTP polling
+      }
       if (typeof loadCandidates === "function") {
         loadCandidates();
       }

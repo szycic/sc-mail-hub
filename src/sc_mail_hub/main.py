@@ -159,13 +159,13 @@ def trigger_immediate_email_sync():
         sync_trigger_event.set()
 
 
-def _run_email_sync():
+def _run_email_sync() -> bool:
     """Synchronous worker thread function to fetch IMAP emails without blocking main asyncio event loop."""
     db = SessionLocal()
     try:
         sys_set = db.query(SystemSettings).first()
         if not sys_set or not sys_set.imap_sync_enabled:
-            return
+            return False
 
         accs = db.query(EmailAccount).all()
         # Explicitly commit initial read transaction so no SQLite lock is held during IMAP network socket downloads
@@ -175,8 +175,10 @@ def _run_email_sync():
             msgs = EmailService.fetch_from_imap(acc, db)
             for msg in msgs:
                 AIService.ensure_candidate_from_email(msg, db)
+        return True
     except Exception as err:
         logger.error(f"Background email sync error: {err}")
+        return False
     finally:
         db.close()
 
@@ -197,9 +199,10 @@ async def background_email_sync_loop():
                 db.close()
 
             # Offload blocking IMAP network socket I/O to a worker thread so HTTP routes remain instant
-            await asyncio.to_thread(_run_email_sync)
-            inbox.set_last_synced_at()
-            await inbox.notify_sync_completed_async()
+            synced = await asyncio.to_thread(_run_email_sync)
+            if synced:
+                inbox.set_last_synced_at()
+                await inbox.notify_sync_completed_async()
 
             sync_trigger_event.clear()
             try:

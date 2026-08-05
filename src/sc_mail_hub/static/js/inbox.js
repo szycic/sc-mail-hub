@@ -625,7 +625,12 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 setInterval(updateLastSyncedDisplay, 10000);
-setInterval(loadInboxStats, 60000);
+setInterval(() => {
+  if (syncUpdatesWs && syncUpdatesWs.readyState === WebSocket.OPEN) {
+    return; // Real-time WebSocket handles stats updates
+  }
+  loadInboxStats();
+}, 60000);
 
 function handleSearchInput() {
   if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
@@ -1180,7 +1185,7 @@ async function deleteMessage(candidateId) {
 }
 
 async function triggerSampleIngest() {
-  const loadingToast = showToast("Stage 1/3: Connecting to IMAP mailboxes...", "loading", true);
+  const loadingToast = showToast("Stage 1/2: Connecting to IMAP mailboxes...", "loading", true);
 
   try {
     const startRes = await fetch("/api/inbox/sample-ingest/start", { method: "POST" });
@@ -1211,11 +1216,13 @@ async function triggerSampleIngest() {
 
       if (payload.status === "completed") {
         finished = true;
+        const syncMsg = payload.message || `Synced ${payload.emails_synced || 0} emails`;
         if (loadingToast) {
-          loadingToast.update("Stage 3/3: Ready for review and Notion sync...", "success");
-          setTimeout(() => loadingToast.dismiss(), 700);
+          loadingToast.update(syncMsg, "success");
+          setTimeout(() => loadingToast.dismiss(), 2000);
+        } else {
+          showToast(syncMsg, "success");
         }
-        showToast(payload.message || "Sync finished", "success");
         loadCandidates();
         ws.close();
       }

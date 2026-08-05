@@ -84,5 +84,74 @@ def test_inbox_candidate_search():
     assert "items" in data
 
 
+def test_cannot_ignore_or_unignore_synced_candidates():
+    from conftest import TestingSessionLocal as SessionLocal
+    from sc_mail_hub.models import TaskCandidate
+
+    db = SessionLocal()
+    try:
+        cand = TaskCandidate(
+            title="Synced Task",
+            status="CREATED",
+            notion_page_id="page_synced_999"
+        )
+        db.add(cand)
+        db.commit()
+        cand_id = cand.id
+    finally:
+        db.close()
+
+    # Single ignore endpoint should return 400
+    res = client.post(f"/api/inbox/candidates/{cand_id}/ignore")
+    assert res.status_code == 400
+    assert "cannot be ignored" in res.json()["detail"].lower()
+
+    # Batch ignore endpoint should skip it
+    batch_res = client.post("/api/inbox/candidates/batch-ignore", json={"candidate_ids": [cand_id]})
+    assert batch_res.status_code == 200
+    assert batch_res.json()["ignored_count"] == 0
+
+    # Single unignore endpoint should return 400
+    unignore_res = client.post(f"/api/inbox/candidates/{cand_id}/unignore")
+    assert unignore_res.status_code == 400
+    assert "cannot be unignored" in unignore_res.json()["detail"].lower()
+
+    # Batch unignore endpoint should skip it
+    batch_unignore_res = client.post("/api/inbox/candidates/batch-unignore", json={"candidate_ids": [cand_id]})
+    assert batch_unignore_res.status_code == 200
+    assert batch_unignore_res.json()["restored_count"] == 0
+
+    db2 = SessionLocal()
+    try:
+        cand_check = db2.query(TaskCandidate).filter(TaskCandidate.id == cand_id).first()
+        assert cand_check.status == "CREATED"
+    finally:
+        db2.close()
+
+
+def test_disabled_auto_sync_does_not_bump_last_synced_at():
+    from sc_mail_hub.main import _run_email_sync
+    from conftest import TestingSessionLocal as SessionLocal
+    from sc_mail_hub.models import SystemSettings
+
+    db = SessionLocal()
+    try:
+        sys_set = db.query(SystemSettings).first()
+        if not sys_set:
+            sys_set = SystemSettings(imap_sync_enabled=False)
+            db.add(sys_set)
+        else:
+            sys_set.imap_sync_enabled = False
+        db.commit()
+    finally:
+        db.close()
+
+    synced = _run_email_sync()
+    assert synced is False
+
+
+
+
+
 
 

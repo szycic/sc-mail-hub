@@ -25,11 +25,19 @@ INGEST_JOB_QUEUES: Dict[str, asyncio.Queue] = {}
 LAST_SYNCED_AT: Optional[str] = None
 
 
+MAIN_EVENT_LOOP: Optional[asyncio.AbstractEventLoop] = None
+
+
 class SyncWebSocketManager:
     def __init__(self):
         self.active_connections: Set[WebSocket] = set()
 
     async def connect(self, websocket: WebSocket):
+        global MAIN_EVENT_LOOP
+        try:
+            MAIN_EVENT_LOOP = asyncio.get_running_loop()
+        except RuntimeError:
+            pass
         await websocket.accept()
         self.active_connections.add(websocket)
 
@@ -118,11 +126,19 @@ async def notify_sync_completed_async():
 
 def notify_sync_completed():
     set_last_synced_at()
+    global MAIN_EVENT_LOOP
     try:
         loop = asyncio.get_running_loop()
         loop.create_task(notify_sync_completed_async())
     except RuntimeError:
-        pass
+        target_loop = MAIN_EVENT_LOOP
+        if not target_loop or target_loop.is_closed():
+            try:
+                target_loop = asyncio.get_event_loop()
+            except RuntimeError:
+                target_loop = None
+        if target_loop and target_loop.is_running():
+            asyncio.run_coroutine_threadsafe(notify_sync_completed_async(), target_loop)
 
 
 def _enqueue_ingest_event(loop: asyncio.AbstractEventLoop, job_id: str, event: dict) -> None:
@@ -147,7 +163,7 @@ def _run_sample_ingest_job(job_id: str, loop: asyncio.AbstractEventLoop) -> None
 
         _enqueue_ingest_event(loop, job_id, {
             "status": "stage",
-            "message": f"Stage 1/3: Connecting to {len(accounts)} IMAP mailbox(es)..."
+            "message": f"Stage 1/2: Connecting to {len(accounts)} IMAP mailbox(es)..."
         })
 
         total_emails = 0
@@ -156,7 +172,7 @@ def _run_sample_ingest_job(job_id: str, loop: asyncio.AbstractEventLoop) -> None
         for idx, account in enumerate(accounts, start=1):
             _enqueue_ingest_event(loop, job_id, {
                 "status": "stage",
-                "message": f"Stage 2/3: Syncing account {idx}/{len(accounts)} ({account.email_address})..."
+                "message": f"Stage 2/2: Syncing account {idx}/{len(accounts)} ({account.email_address})..."
             })
 
             emails = EmailService.fetch_from_imap(account, db)
@@ -178,7 +194,7 @@ def _run_sample_ingest_job(job_id: str, loop: asyncio.AbstractEventLoop) -> None
 
         _enqueue_ingest_event(loop, job_id, {
             "status": "completed",
-            "message": f"Synced {total_emails} emails and prepared {total_candidates} candidates for AI-on-demand review.",
+            "message": f"Synced {total_emails} emails",
             "emails_synced": total_emails,
             "candidates_seeded": total_candidates
         })
@@ -406,6 +422,7 @@ def update_candidate(candidate_id: int, payload: TaskCandidateUpdate, db: Sessio
 
     db.commit()
     db.refresh(candidate)
+    notify_sync_completed()
     
     email_msg = db.query(EmailMessage).filter(EmailMessage.id == candidate.email_id).first() if candidate.email_id else None
     out = TaskCandidateOut.model_validate(candidate)
@@ -437,10 +454,12 @@ def prepare_task_with_ai(
         candidate.status = "AI_PROCESSED"
         db.commit()
         db.refresh(candidate)
+        notify_sync_completed()
     elif candidate.status == "PENDING" or force:
         candidate.status = "AI_PROCESSED"
         db.commit()
         db.refresh(candidate)
+        notify_sync_completed()
 
     out = TaskCandidateOut.model_validate(candidate)
     if email_msg:
@@ -468,6 +487,7 @@ def create_task_in_notion(candidate_id: int, payload: Optional[TaskCandidateUpda
     if not res.get("success"):
         raise HTTPException(status_code=400, detail=res.get("error", "Failed to create task in Notion"))
 
+    notify_sync_completed()
     return {
         "message": "Task successfully created in Notion!",
         "candidate_id": candidate.id,
@@ -481,17 +501,25 @@ def ignore_candidate(candidate_id: int, db: Session = Depends(get_db)):
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidate not found")
 
+    if candidate.status == "CREATED" or candidate.notion_page_id:
+        raise HTTPException(status_code=400, detail="Task candidates already synced to Notion cannot be ignored.")
+
     if candidate.status != "IGNORED":
         candidate.previous_status = candidate.status
     candidate.status = "IGNORED"
     db.commit()
+    notify_sync_completed()
     return {"message": "Task candidate marked as ignored", "candidate_id": candidate.id}
+
 
 @router.post("/candidates/{candidate_id}/unignore")
 def unignore_candidate(candidate_id: int, db: Session = Depends(get_db)):
     candidate = db.query(TaskCandidate).filter(TaskCandidate.id == candidate_id).first()
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidate not found")
+
+    if candidate.status == "CREATED" or candidate.notion_page_id:
+        raise HTTPException(status_code=400, detail="Task candidates already synced to Notion cannot be unignored.")
 
     target_status = candidate.previous_status or "PENDING"
     if target_status == "IGNORED":
@@ -506,6 +534,7 @@ def unignore_candidate(candidate_id: int, db: Session = Depends(get_db)):
         msg = "Task candidate restored to Pending Emails"
 
     db.commit()
+    notify_sync_completed()
     return {"message": msg, "candidate_id": candidate.id, "status": candidate.status}
 
 @router.delete("/candidates/{candidate_id}")
@@ -529,6 +558,7 @@ def delete_candidate(candidate_id: int, db: Session = Depends(get_db)):
                         account.last_uid = None
             db.delete(email_msg)
     db.commit()
+    notify_sync_completed()
     return {"message": "Message deleted successfully", "candidate_id": candidate_id}
 
 @router.delete("/clear-all")
@@ -541,6 +571,7 @@ def clear_all_messages(db: Session = Depends(get_db)):
         account.last_synced_at = None
     EmailService.purge_all_pdfs()
     db.commit()
+    notify_sync_completed()
     return {
         "message": "Inbox emptied successfully",
         "deleted_candidates": candidates_count,
@@ -566,6 +597,7 @@ def trigger_sample_ingest(db: Session = Depends(get_db)):
             cand = AIService.ensure_candidate_from_email(email_msg, db)
             new_candidates.append(cand.id)
 
+    notify_sync_completed()
     return {
         "message": f"Synced {len(total_emails)} emails and prepared {len(new_candidates)} candidates for AI-on-demand review.",
         "candidates_created": len(new_candidates)
@@ -593,6 +625,7 @@ def batch_process_candidates(
             c.status = "AI_PROCESSED"
             count += 1
     db.commit()
+    notify_sync_completed()
     return {"message": f"Successfully processed {count} task(s) with AI", "processed_count": count}
 
 
@@ -617,6 +650,7 @@ def batch_reprocess_candidates(
             c.status = "AI_PROCESSED"
             count += 1
     db.commit()
+    notify_sync_completed()
     return {"message": f"Successfully reprocessed {count} task(s) with AI", "reprocessed_count": count}
 
 
@@ -625,11 +659,14 @@ def batch_ignore_candidates(payload: BatchCandidatesRequest, db: Session = Depen
     candidates = db.query(TaskCandidate).filter(TaskCandidate.id.in_(payload.candidate_ids)).all()
     count = 0
     for c in candidates:
+        if c.status == "CREATED" or c.notion_page_id:
+            continue
         if c.status != "IGNORED":
             c.previous_status = c.status
             c.status = "IGNORED"
             count += 1
     db.commit()
+    notify_sync_completed()
     return {"message": f"Marked {count} candidate(s) as ignored", "ignored_count": count}
 
 
@@ -638,10 +675,13 @@ def batch_unignore_candidates(payload: BatchCandidatesRequest, db: Session = Dep
     candidates = db.query(TaskCandidate).filter(TaskCandidate.id.in_(payload.candidate_ids)).all()
     count = 0
     for c in candidates:
+        if c.status == "CREATED" or c.notion_page_id:
+            continue
         target_status = c.previous_status or "PENDING"
         if target_status == "IGNORED":
             target_status = "PENDING"
         c.status = target_status
         count += 1
     db.commit()
+    notify_sync_completed()
     return {"message": f"Restored {count} candidate(s)", "restored_count": count}

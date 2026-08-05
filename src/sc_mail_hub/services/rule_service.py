@@ -8,7 +8,7 @@ import re
 import logging
 from typing import Optional, List
 from sqlalchemy.orm import Session
-from sc_mail_hub.models import AutoIgnoreRule
+from sc_mail_hub.models import AutoIgnoreRule, TaskCandidate
 
 logger = logging.getLogger("sc_mail_hub.rule_service")
 
@@ -79,3 +79,41 @@ class RuleService:
                 logger.info(f"🛡️ Auto-ignore rule matched! Rule ID={rule.id} ('{rule.name}', type='{rule.rule_type}') matched sender='{sender}', subject='{subject}'")
                 return rule
         return None
+
+    @staticmethod
+    def apply_rules_to_existing_candidates(db: Session) -> dict:
+        """Evaluate active auto-ignore rules against existing non-ignored task candidates.
+        
+        Candidates already synced to Notion (status == 'CREATED' or notion_page_id is set)
+        or already IGNORED are skipped.
+        
+        Returns a dict with `evaluated_count` and `ignored_count`.
+        """
+        candidates = db.query(TaskCandidate).filter(
+            TaskCandidate.status != "IGNORED",
+            TaskCandidate.status != "CREATED",
+            TaskCandidate.notion_page_id.is_(None)
+        ).all()
+
+        evaluated_count = len(candidates)
+        ignored_count = 0
+
+        for candidate in candidates:
+            sender = candidate.email.sender if candidate.email else ""
+            subject = candidate.email.subject if candidate.email else candidate.title
+
+            matched_rule = RuleService.evaluate_auto_ignore_rules(sender, subject, db)
+            if matched_rule:
+                candidate.previous_status = candidate.status
+                candidate.status = "IGNORED"
+                candidate.auto_ignored_reason = f"Auto-Ignored: {matched_rule.name}"
+                ignored_count += 1
+
+        if ignored_count > 0:
+            db.commit()
+
+        return {
+            "evaluated_count": evaluated_count,
+            "ignored_count": ignored_count
+        }
+
