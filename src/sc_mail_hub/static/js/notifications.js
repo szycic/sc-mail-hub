@@ -2,8 +2,9 @@
  * Notification management module for SC Mail Hub.
  *
  * Handles Service Worker registration, permission requests,
- * desktop notifications when pending count increases, and
- * persistent PWA notifications on mobile when pending count > 0.
+ * desktop notifications when pending count increases,
+ * persistent PWA notifications on mobile when pending count > 0,
+ * and native app icon badging via setAppBadge.
  */
 
 let previousPendingCount = null;
@@ -24,7 +25,6 @@ function initNotifications() {
 
   // Request permission automatically if default (user can also grant via prompt)
   if ("Notification" in window && Notification.permission === "default") {
-    // Attempt permission request on user interaction or load
     const requestPerm = () => {
       Notification.requestPermission();
       document.removeEventListener("click", requestPerm);
@@ -39,6 +39,21 @@ function isMobileDevice() {
   const isTouchMobile = window.matchMedia("(pointer: coarse)").matches && window.matchMedia("(max-width: 1024px)").matches;
   const isStandalonePWA = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
   return userAgentMobile || (isTouchMobile && isStandalonePWA) || (isTouchMobile && screen.width <= 768);
+}
+
+// Update Native PWA / App Icon Badge
+function updateAppBadge(pendingCount) {
+  if ("setAppBadge" in navigator) {
+    if (pendingCount > 0) {
+      navigator.setAppBadge(pendingCount).catch((err) => {
+        console.warn("Could not set app badge:", err);
+      });
+    } else if ("clearAppBadge" in navigator) {
+      navigator.clearAppBadge().catch((err) => {
+        console.warn("Could not clear app badge:", err);
+      });
+    }
+  }
 }
 
 // Request Notification permission explicitly if needed
@@ -62,18 +77,29 @@ function sendDesktopNotification(pendingCount) {
     body: bodyText,
     icon: "/static/assets/android-chrome-192x192.png",
     badge: "/static/assets/favicon-32x32.png",
-    tag: `desktop-pending-${Date.now()}`,
+    tag: "desktop-pending-notification",
+    renotify: true,
     data: { url: "/inbox" }
   };
 
-  if (swRegistration && swRegistration.showNotification) {
-    swRegistration.showNotification(title, options);
+  const triggerShow = (reg) => {
+    if (reg && reg.showNotification) {
+      reg.showNotification(title, options);
+    } else {
+      const notification = new Notification(title, options);
+      notification.onclick = () => {
+        window.focus();
+        notification.close();
+      };
+    }
+  };
+
+  if (swRegistration) {
+    triggerShow(swRegistration);
+  } else if (navigator.serviceWorker && navigator.serviceWorker.ready) {
+    navigator.serviceWorker.ready.then(triggerShow);
   } else {
-    const notification = new Notification(title, options);
-    notification.onclick = () => {
-      window.focus();
-      notification.close();
-    };
+    triggerShow(null);
   }
 }
 
@@ -125,6 +151,7 @@ function updateMobilePWANotification(pendingCount) {
 
 /**
  * Update notifications according to platform rules:
+ * - App Badge: Native app icon badge updated (set / clear).
  * - Desktop: Notify ONLY when pending count INCREASES.
  * - Mobile (PWA): Persistent notification if pendingCount > 0, closed when 0.
  *
@@ -132,6 +159,9 @@ function updateMobilePWANotification(pendingCount) {
  */
 function updatePendingNotifications(pendingCount) {
   if (typeof pendingCount !== "number" || isNaN(pendingCount)) return;
+
+  // Update native PWA icon badge
+  updateAppBadge(pendingCount);
 
   const isMobile = isMobileDevice();
 
