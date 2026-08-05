@@ -194,8 +194,8 @@ function applyInboxStatsData(counts, lastSyncedAt) {
       document.title = "Mail Hub";
     }
 
-    if (typeof updatePendingNotifications === "function") {
-      updatePendingNotifications(pendingCount);
+    if (typeof handlePendingNotifications === "function") {
+      handlePendingNotifications(pendingCount);
     }
   }
 

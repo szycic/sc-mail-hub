@@ -1,5 +1,4 @@
-// SC Mail Hub Service Worker for Notifications
-
+// Service Worker for SC Mail Hub Notifications
 self.addEventListener("install", (event) => {
   self.skipWaiting();
 });
@@ -10,16 +9,15 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-
   event.waitUntil(
-    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientList) => {
+    clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientList) => {
       for (const client of clientList) {
         if (client.url && "focus" in client) {
           return client.focus();
         }
       }
-      if (self.clients.openWindow) {
-        return self.clients.openWindow("/inbox");
+      if (clients.openWindow) {
+        return clients.openWindow("/inbox");
       }
     })
   );

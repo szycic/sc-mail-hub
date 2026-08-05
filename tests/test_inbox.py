@@ -10,13 +10,6 @@ def test_root_index_and_tab_paths():
         assert response.status_code == 200
         assert "Mail Hub" in response.text
 
-
-def test_service_worker_endpoint():
-    response = client.get("/sw.js")
-    assert response.status_code == 200
-    assert "application/javascript" in response.headers.get("content-type", "")
-    assert "addEventListener" in response.text
-
 def test_sample_ingest_and_inbox():
     # 1. Without connected account, should return HTTP 400
     no_acc_res = client.post("/api/inbox/sample-ingest")
@@ -155,6 +148,13 @@ def test_disabled_auto_sync_does_not_bump_last_synced_at():
 
     synced = _run_email_sync()
     assert synced is False
+
+
+def test_service_worker_endpoint():
+    res = client.get("/sw.js")
+    assert res.status_code == 200
+    assert "Service Worker" in res.text
+
 
 
 

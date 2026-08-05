@@ -2,19 +2,19 @@
  * Notification management module for SC Mail Hub.
  *
  * Handles Service Worker registration, permission requests,
- * desktop notifications when pending count increases,
- * persistent PWA notifications on mobile when pending count > 0,
- * and native app icon badging via setAppBadge.
+ * notifications when pending count increases and is non-zero,
+ * native app icon badging, and in-app toasts.
  */
 
 let previousPendingCount = null;
 let swRegistration = null;
 
-// Initialize Service Worker and register notification listeners
+// Initialize Service Worker and request notification permissions
 function initNotifications() {
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker
       .register("/sw.js")
+      .catch(() => navigator.serviceWorker.register("/static/js/sw.js"))
       .then((reg) => {
         swRegistration = reg;
       })
@@ -23,176 +23,81 @@ function initNotifications() {
       });
   }
 
-  // Request permission automatically if default (user can also grant via prompt)
+  // Request notification permission automatically on first user click if state is default
   if ("Notification" in window && Notification.permission === "default") {
     const requestPerm = () => {
-      Notification.requestPermission();
-      document.removeEventListener("click", requestPerm);
+      Notification.requestPermission().catch(() => {});
     };
     document.addEventListener("click", requestPerm, { once: true });
   }
 }
 
-// Platform detection helper
-function isMobileDevice() {
-  const userAgentMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-  const isTouchMobile = window.matchMedia("(pointer: coarse)").matches && window.matchMedia("(max-width: 1024px)").matches;
-  const isStandalonePWA = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
-  return userAgentMobile || (isTouchMobile && isStandalonePWA) || (isTouchMobile && screen.width <= 768);
+/**
+ * Formats the notification text according to the pending count:
+ * - 1: "There is 1 pending email"
+ * - >1: "There are X pending emails"
+ *
+ * @param {number} count
+ * @returns {string}
+ */
+function formatPendingNotificationMessage(count) {
+  const isSingular = count === 1;
+  const verb = isSingular ? "is" : "are";
+  const noun = isSingular ? "email" : "emails";
+  return `There ${verb} ${count} pending ${noun}`;
 }
 
-// Update Native PWA / App Icon Badge
-function updateAppBadge(pendingCount) {
+/**
+ * Triggered whenever pending count is updated.
+ * Sends a notification when pending count increases and is non-zero (count > 0).
+ *
+ * @param {number} pendingCount
+ */
+function handlePendingNotifications(pendingCount) {
+  const count = parseInt(pendingCount, 10) || 0;
+
+  // Update App Icon Badge if supported
   if ("setAppBadge" in navigator) {
-    if (pendingCount > 0) {
-      navigator.setAppBadge(pendingCount).catch((err) => {
-        console.warn("Could not set app badge:", err);
-      });
+    if (count > 0) {
+      navigator.setAppBadge(count).catch(() => {});
     } else if ("clearAppBadge" in navigator) {
-      navigator.clearAppBadge().catch((err) => {
-        console.warn("Could not clear app badge:", err);
-      });
+      navigator.clearAppBadge().catch(() => {});
     }
   }
-}
 
-// Request Notification permission explicitly if needed
-async function requestNotificationPermission() {
-  if ("Notification" in window) {
-    const perm = await Notification.requestPermission();
-    return perm === "granted";
-  }
-  return false;
-}
-
-// Send Desktop Notification when pending email count increases
-function sendDesktopNotification(pendingCount) {
-  if (!("Notification" in window) || Notification.permission !== "granted") {
+  if (previousPendingCount === null) {
+    // Initial baseline on page load
+    previousPendingCount = count;
     return;
   }
 
-  const title = "Pending Emails";
-  const bodyText = pendingCount === 1 ? "There is 1 pending email." : `There are ${pendingCount} pending emails.`;
-  const options = {
-    body: bodyText,
-    icon: "/static/assets/android-chrome-192x192.png",
-    badge: "/static/assets/favicon-32x32.png",
-    tag: "desktop-pending-notification",
-    renotify: true,
-    data: { url: "/inbox" }
-  };
+  // Check if count increased and is non-zero
+  if (count > previousPendingCount && count > 0) {
+    const message = formatPendingNotificationMessage(count);
+    const title = "Mail Hub";
 
-  const triggerShow = (reg) => {
-    if (reg && reg.showNotification) {
-      reg.showNotification(title, options);
-    } else {
-      const notification = new Notification(title, options);
-      notification.onclick = () => {
-        window.focus();
-        notification.close();
-      };
-    }
-  };
-
-  if (swRegistration) {
-    triggerShow(swRegistration);
-  } else if (navigator.serviceWorker && navigator.serviceWorker.ready) {
-    navigator.serviceWorker.ready.then(triggerShow);
-  } else {
-    triggerShow(null);
-  }
-}
-
-let lastMobilePendingCount = null;
-
-// Maintain or dismiss persistent notification on Mobile (PWA)
-async function updateMobilePWANotification(pendingCount) {
-  if (!("Notification" in window) || Notification.permission !== "granted") {
-    return;
-  }
-
-  const tag = "pending-emails-pwa";
-
-  // Ensure Service Worker registration is ready
-  let reg = swRegistration;
-  if (!reg && navigator.serviceWorker && navigator.serviceWorker.ready) {
-    try {
-      reg = await navigator.serviceWorker.ready;
-    } catch (e) {
-      console.warn("Service worker ready wait failed:", e);
-    }
-  }
-
-  if (pendingCount > 0) {
-    // Check if count changed or if active notification exists
-    const existingNotifications = reg && reg.getNotifications ? await reg.getNotifications({ tag }) : [];
-    const hasNotification = existingNotifications.length > 0;
-
-    if (!hasNotification || lastMobilePendingCount !== pendingCount) {
-      const title = "Pending Emails";
-      const bodyText = pendingCount === 1 ? "There is 1 pending email." : `There are ${pendingCount} pending emails.`;
+    // Desktop Browser Notification
+    if ("Notification" in window && Notification.permission === "granted") {
       const options = {
-        body: bodyText,
-        icon: "/static/assets/android-chrome-192x192.png",
-        badge: "/static/assets/favicon-32x32.png",
-        tag: tag,
-        requireInteraction: true, // Prevents auto-dismissal (Desktop / Android)
-        ongoing: true,            // Sticky ongoing notification on Android Chrome / PWA
-        renotify: true,
-        data: { url: "/inbox" }
+        body: message,
+        icon: "/static/assets/favicon-32x32.png",
+        badge: "/static/assets/favicon-16x16.png",
+        tag: "pending-emails-notification",
+        renotify: true
       };
 
-      if (reg && reg.showNotification) {
-        await reg.showNotification(title, options);
+      if (swRegistration && swRegistration.showNotification) {
+        swRegistration.showNotification(title, options);
       } else {
         new Notification(title, options);
       }
     }
-    lastMobilePendingCount = pendingCount;
-  } else {
-    // pendingCount === 0: Close persistent notification
-    if (reg && reg.getNotifications) {
-      const notifications = await reg.getNotifications({ tag });
-      notifications.forEach((n) => n.close());
-    } else if (navigator.serviceWorker && navigator.serviceWorker.ready) {
-      const activeReg = await navigator.serviceWorker.ready;
-      const notifications = await activeReg.getNotifications({ tag });
-      notifications.forEach((n) => n.close());
-    }
-    lastMobilePendingCount = 0;
-  }
-}
-
-/**
- * Update notifications according to platform rules:
- * - App Badge: Native app icon badge updated (set / clear).
- * - Desktop: Notify ONLY when pending count INCREASES.
- * - Mobile (PWA): Persistent notification if pendingCount > 0, closed when 0.
- *
- * @param {number} pendingCount - Current number of pending emails
- */
-function updatePendingNotifications(pendingCount) {
-  if (typeof pendingCount !== "number" || isNaN(pendingCount)) return;
-
-  // Update native PWA icon badge
-  updateAppBadge(pendingCount);
-
-  const isMobile = isMobileDevice();
-
-  if (isMobile) {
-    updateMobilePWANotification(pendingCount);
-  } else {
-    if (previousPendingCount !== null && pendingCount > previousPendingCount) {
-      sendDesktopNotification(pendingCount);
-    }
   }
 
-  previousPendingCount = pendingCount;
+  previousPendingCount = count;
 }
 
-// Auto-initialize on DOM ready
-if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", initNotifications);
-} else {
+// Auto-initialize on DOM load
+document.addEventListener("DOMContentLoaded", () => {
   initNotifications();
-}
+});

@@ -10,7 +10,7 @@ import logging
 from datetime import datetime, timezone, timedelta
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
-from fastapi.responses import RedirectResponse, FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
@@ -256,13 +256,9 @@ app.include_router(rules.router)
 
 
 @app.get("/sw.js")
-def service_worker():
-    """Serve service worker javascript file at root path."""
-    return FileResponse(
-        os.path.join(static_dir, "js", "sw.js"),
-        media_type="application/javascript",
-        headers={"Service-Worker-Allowed": "/"}
-    )
+def get_service_worker():
+    """Serve Service Worker script at root path scope."""
+    return FileResponse(os.path.join(static_dir, "js", "sw.js"), media_type="application/javascript")
 
 
 @app.get("/")
