@@ -193,6 +193,10 @@ function applyInboxStatsData(counts, lastSyncedAt) {
     } else {
       document.title = "Mail Hub";
     }
+
+    if (typeof updatePendingNotifications === "function") {
+      updatePendingNotifications(pendingCount);
+    }
   }
 
   if (lastSyncedAt) {
