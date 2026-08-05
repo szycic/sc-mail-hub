@@ -103,49 +103,63 @@ function sendDesktopNotification(pendingCount) {
   }
 }
 
+let lastMobilePendingCount = null;
+
 // Maintain or dismiss persistent notification on Mobile (PWA)
-function updateMobilePWANotification(pendingCount) {
+async function updateMobilePWANotification(pendingCount) {
   if (!("Notification" in window) || Notification.permission !== "granted") {
     return;
   }
 
   const tag = "pending-emails-pwa";
 
-  if (pendingCount > 0) {
-    const title = "Pending Emails";
-    const bodyText = pendingCount === 1 ? "There is 1 pending email." : `There are ${pendingCount} pending emails.`;
-    const options = {
-      body: bodyText,
-      icon: "/static/assets/android-chrome-192x192.png",
-      badge: "/static/assets/favicon-32x32.png",
-      tag: tag,
-      requireInteraction: true,
-      renotify: true,
-      data: { url: "/inbox" }
-    };
-
-    if (swRegistration && swRegistration.showNotification) {
-      swRegistration.showNotification(title, options);
-    } else if (navigator.serviceWorker && navigator.serviceWorker.ready) {
-      navigator.serviceWorker.ready.then((reg) => {
-        reg.showNotification(title, options);
-      });
-    } else {
-      new Notification(title, options);
+  // Ensure Service Worker registration is ready
+  let reg = swRegistration;
+  if (!reg && navigator.serviceWorker && navigator.serviceWorker.ready) {
+    try {
+      reg = await navigator.serviceWorker.ready;
+    } catch (e) {
+      console.warn("Service worker ready wait failed:", e);
     }
+  }
+
+  if (pendingCount > 0) {
+    // Check if count changed or if active notification exists
+    const existingNotifications = reg && reg.getNotifications ? await reg.getNotifications({ tag }) : [];
+    const hasNotification = existingNotifications.length > 0;
+
+    if (!hasNotification || lastMobilePendingCount !== pendingCount) {
+      const title = "Pending Emails";
+      const bodyText = pendingCount === 1 ? "There is 1 pending email." : `There are ${pendingCount} pending emails.`;
+      const options = {
+        body: bodyText,
+        icon: "/static/assets/android-chrome-192x192.png",
+        badge: "/static/assets/favicon-32x32.png",
+        tag: tag,
+        requireInteraction: true, // Prevents auto-dismissal (Desktop / Android)
+        ongoing: true,            // Sticky ongoing notification on Android Chrome / PWA
+        renotify: true,
+        data: { url: "/inbox" }
+      };
+
+      if (reg && reg.showNotification) {
+        await reg.showNotification(title, options);
+      } else {
+        new Notification(title, options);
+      }
+    }
+    lastMobilePendingCount = pendingCount;
   } else {
     // pendingCount === 0: Close persistent notification
-    if (swRegistration && swRegistration.getNotifications) {
-      swRegistration.getNotifications({ tag }).then((notifications) => {
-        notifications.forEach((n) => n.close());
-      });
+    if (reg && reg.getNotifications) {
+      const notifications = await reg.getNotifications({ tag });
+      notifications.forEach((n) => n.close());
     } else if (navigator.serviceWorker && navigator.serviceWorker.ready) {
-      navigator.serviceWorker.ready.then((reg) => {
-        reg.getNotifications({ tag }).then((notifications) => {
-          notifications.forEach((n) => n.close());
-        });
-      });
+      const activeReg = await navigator.serviceWorker.ready;
+      const notifications = await activeReg.getNotifications({ tag });
+      notifications.forEach((n) => n.close());
     }
+    lastMobilePendingCount = 0;
   }
 }
 
