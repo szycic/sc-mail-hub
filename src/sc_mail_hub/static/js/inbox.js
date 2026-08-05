@@ -176,9 +176,23 @@ function applyInboxStatsData(counts, lastSyncedAt) {
     ["PENDING", "AI_PROCESSED", "CREATED", "IGNORED", "ALL"].forEach(st => {
       const badgeEl = document.getElementById(`badge-${st}`);
       if (badgeEl) {
-        badgeEl.textContent = counts[st] !== undefined ? counts[st] : 0;
+        const val = counts[st] !== undefined ? counts[st] : 0;
+        badgeEl.textContent = val > 99 ? "99+" : val;
+        if (val > 99) {
+          badgeEl.title = `${val} items`;
+        } else {
+          badgeEl.removeAttribute("title");
+        }
       }
     });
+
+    const pendingCount = counts["PENDING"] !== undefined ? counts["PENDING"] : 0;
+    if (pendingCount > 0) {
+      const displayPending = pendingCount > 99 ? "99+" : pendingCount;
+      document.title = `(${displayPending}) Mail Hub`;
+    } else {
+      document.title = "Mail Hub";
+    }
   }
 
   if (lastSyncedAt) {
