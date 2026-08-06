@@ -111,6 +111,8 @@ async function loadSyncHealthStats() {
   }
 }
 
+window.currentSyncChartData = null;
+
 async function loadSyncChartData() {
   const legendEl = document.getElementById("sync-chart-legend");
   const barsEl = document.getElementById("sync-chart-bars-container");
@@ -121,6 +123,7 @@ async function loadSyncChartData() {
     const res = await fetch("/api/admin/sync-chart-data");
     if (!res.ok) return;
     const data = await res.json();
+    window.currentSyncChartData = data;
 
     const days = data.days || [];
     const series = data.series || [];
@@ -145,19 +148,35 @@ async function loadSyncChartData() {
 
     barsEl.innerHTML = days.map((dayLabel, dayIdx) => {
       const total = dayTotals[dayIdx];
+
+      const breakdownText = series.map(s => {
+        const val = s.counts[dayIdx] || 0;
+        return `${s.account_name}: ${val}`;
+      }).join(" | ");
+
       const segmentsHtml = series.map(s => {
         const val = s.counts[dayIdx] || 0;
         if (val === 0) return "";
         const pct = ((val / total) * 100).toFixed(1);
-        return `<div title="${escapeHtml(s.account_name)}: ${val} emails" style="height:${pct}%; background:${s.color}; width:100%; transition:height 0.3s ease;"></div>`;
+        return `
+          <div class="chart-segment"
+               data-acc="${escapeHtml(s.account_name)}"
+               style="height:${pct}%; background:${s.color}; width:100%; transition:all 0.2s ease; cursor:default;">
+          </div>
+        `;
       }).join("");
 
       const heightPct = Math.max(Math.round((total / maxVal) * 100), total > 0 ? 8 : 4);
 
       return `
-        <div style="flex:1; display:flex; flex-direction:column; align-items:center; height:100%; justify-content:flex-end;">
-          <span style="font-size:9px; color:var(--text-dim); margin-bottom:2px; opacity:${total > 0 ? '1' : '0.4'};">${total}</span>
-          <div style="width:70%; max-width:28px; height:${heightPct}%; background:rgba(255,255,255,0.04); border-radius:4px 4px 0 0; display:flex; flex-direction:column-reverse; overflow:hidden; border:1px solid rgba(255,255,255,0.08);" title="${dayLabel}: ${total} total emails">
+        <div class="chart-bar-column"
+             style="flex:1; display:flex; flex-direction:column; align-items:center; height:100%; justify-content:flex-end;">
+          <span style="font-size:9px; color:var(--text-dim); margin-bottom:2px; opacity:${total > 0 ? '1' : '0.4'}; font-weight:600;">${total}</span>
+          <div class="chart-bar-pill"
+               onmouseenter="this.style.filter='brightness(1.25)'; this.style.boxShadow='0 0 10px rgba(59,130,246,0.4)'; showChartPopover(this, event, ${dayIdx})"
+               onmousemove="updateChartPopoverPos(this, event)"
+               onmouseleave="this.style.filter='none'; this.style.boxShadow='none'; hideChartPopover()"
+               style="width:75%; max-width:28px; height:${heightPct}%; background:rgba(255,255,255,0.04); border-radius:4px 4px 0 0; display:flex; flex-direction:column-reverse; overflow:hidden; border:1px solid rgba(255,255,255,0.08); cursor:default; transition:all 0.15s ease;">
             ${segmentsHtml}
           </div>
         </div>
@@ -171,6 +190,88 @@ async function loadSyncChartData() {
   } catch (err) {
     console.error("Error loading sync chart data:", err);
   }
+}
+
+function showChartPopover(pillEl, event, dayIdx) {
+  const popoverEl = document.getElementById("sync-chart-popover");
+  const bodyEl = document.getElementById("sync-chart-popover-body");
+  if (!popoverEl || !bodyEl || !window.currentSyncChartData) return;
+
+  const data = window.currentSyncChartData;
+  const dayLabel = data.days[dayIdx] || "";
+  const series = data.series || [];
+
+  const itemsHtml = series.map(s => {
+    const val = s.counts[dayIdx] || 0;
+    return `
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:16px; padding:3px 6px; border-radius:4px;">
+        <span style="display:inline-flex; align-items:center; gap:6px;">
+          <span style="width:8px; height:8px; border-radius:50%; background:${s.color}; display:inline-block;"></span>
+          ${escapeHtml(s.account_name)}
+        </span>
+        <strong style="color:#60a5fa;">${val} email${val === 1 ? '' : 's'}</strong>
+      </div>
+    `;
+  }).join("");
+
+  const dayTotal = series.reduce((sum, s) => sum + (s.counts[dayIdx] || 0), 0);
+
+  bodyEl.innerHTML = `
+    <div style="font-weight:700; color:var(--text-main); margin-bottom:6px; font-size:12px; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:4px; display:flex; justify-content:space-between; align-items:center; gap:12px;">
+      <span>📅 ${escapeHtml(dayLabel)}</span>
+      <span style="font-size:10px; color:var(--text-dim); font-weight:400;">Day Total: <strong>${dayTotal}</strong></span>
+    </div>
+    <div style="display:flex; flex-direction:column; gap:2px;">
+      ${itemsHtml}
+    </div>
+  `;
+
+  popoverEl.style.display = "block";
+  updateChartPopoverPos(pillEl, event);
+}
+
+function updateChartPopoverPos(pillEl, event) {
+  const popoverEl = document.getElementById("sync-chart-popover");
+  if (!popoverEl) return;
+
+  const targetPill = pillEl || (event && event.currentTarget);
+  if (targetPill && targetPill.getBoundingClientRect) {
+    const pillRect = targetPill.getBoundingClientRect();
+    const popoverRect = popoverEl.getBoundingClientRect();
+
+    let x = pillRect.left + (pillRect.width / 2) - (popoverRect.width / 2);
+    let y = pillRect.top - popoverRect.height - 10;
+
+    if (x < 10) x = 10;
+    if (x + popoverRect.width > window.innerWidth - 10) {
+      x = window.innerWidth - popoverRect.width - 10;
+    }
+
+    const arrowEl = document.getElementById("sync-chart-popover-arrow");
+    if (y < 10) {
+      y = pillRect.bottom + 10;
+      if (arrowEl) {
+        arrowEl.style.top = "-5px";
+        arrowEl.style.bottom = "auto";
+        arrowEl.style.transform = "rotate(225deg)";
+      }
+    } else {
+      if (arrowEl) {
+        arrowEl.style.bottom = "-5px";
+        arrowEl.style.top = "auto";
+        arrowEl.style.transform = "rotate(45deg)";
+      }
+    }
+
+    popoverEl.style.left = `${Math.round(x)}px`;
+    popoverEl.style.top = `${Math.round(y)}px`;
+  }
+}
+
+function hideChartPopover() {
+  const popoverEl = document.getElementById("sync-chart-popover");
+  if (!popoverEl) return;
+  popoverEl.style.display = "none";
 }
 
 async function loadAutoIgnoreRules() {
