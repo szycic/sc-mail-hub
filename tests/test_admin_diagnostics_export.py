@@ -202,15 +202,82 @@ def test_auto_ignore_rules_import_deduplication():
 
 
 def test_get_sync_health_stats():
-    """Verify that GET /api/admin/sync-health returns live IMAP sync health indicators."""
-    response = client.get("/api/admin/sync-health")
-    assert response.status_code == 200, response.text
-    data = response.json()
+    """Verify that GET /api/admin/sync-health returns live IMAP sync health indicators and excludes old DB messages."""
+    from datetime import datetime, timezone, timedelta
+    from sc_mail_hub.database import get_db, SessionLocal
+    from sc_mail_hub.models import EmailMessage, EmailAccount, SystemSettings
+    from sc_mail_hub.services.email_service import EmailService
 
-    assert "last_sync_duration_seconds" in data
-    assert "emails_fetched_today" in data
-    assert "status" in data
-    assert data["status"] in ("healthy", "error")
+    # Reset in-memory cumulative stats & persisted daily count for test isolation
+    EmailService._last_sync_stats["cumulative_fetched_today"] = 0
+
+    db_gen = app.dependency_overrides.get(get_db, SessionLocal)()
+    db = next(db_gen) if hasattr(db_gen, "__next__") else db_gen
+    try:
+        sys_set = db.query(SystemSettings).first()
+        if sys_set:
+            sys_set.daily_ingested_count = 0
+            db.commit()
+
+        # Create dummy account if none exists
+        acc = db.query(EmailAccount).first()
+        if not acc:
+            acc = EmailAccount(name="Test Account", provider="imap", email_address="test@local.domain")
+            db.add(acc)
+            db.commit()
+            db.refresh(acc)
+
+        # Seed an old email from 5 days ago
+        old_msg = EmailMessage(
+            account_id=acc.id,
+            message_id="old-test-msg@local.domain",
+            sender="old@local.domain",
+            subject="Old email",
+            body_text="Old email content",
+            received_at=datetime.now(timezone.utc) - timedelta(days=5)
+        )
+        db.add(old_msg)
+
+        # Seed a today email
+        today_msg = EmailMessage(
+            account_id=acc.id,
+            message_id="today-test-msg@local.domain",
+            sender="today@local.domain",
+            subject="Today email",
+            body_text="Today email content",
+            received_at=datetime.now(timezone.utc)
+        )
+        db.add(today_msg)
+        db.commit()
+
+        response = client.get("/api/admin/sync-health")
+        assert response.status_code == 200, response.text
+        data = response.json()
+
+        assert "last_sync_duration_seconds" in data
+        assert "emails_fetched_today" in data
+        assert "status" in data
+        assert data["status"] in ("healthy", "error")
+
+        # Today count must strictly count emails received today (1), ignoring old messages (1 old + 1 today = 2 total, today count = 1)
+        today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).replace(tzinfo=None)
+        today_db_count = db.query(EmailMessage).filter(
+            EmailMessage.received_at >= today_start
+        ).count()
+        assert data["emails_fetched_today"] == today_db_count
+        assert today_db_count == 1
+
+        # Clean up seeded test messages and dummy account
+        db.delete(old_msg)
+        db.delete(today_msg)
+        if acc and acc.email_address == "test@local.domain":
+            db.delete(acc)
+        db.commit()
+    finally:
+        if hasattr(db_gen, "close"):
+            db_gen.close()
+        else:
+            db.close()
 
 
 def test_get_sync_chart_data():

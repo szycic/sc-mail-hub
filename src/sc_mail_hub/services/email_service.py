@@ -97,8 +97,7 @@ class EmailService:
     def get_sync_health_stats(cls, db: Session) -> Dict[str, Any]:
         """Compute live IMAP sync health metrics including today's total ingested emails."""
         today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        db_total = db.query(EmailMessage).count()
-        today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).replace(tzinfo=None)
         today_db_count = db.query(EmailMessage).filter(EmailMessage.received_at >= today_start).count()
 
         persisted_today = 0
@@ -110,7 +109,7 @@ class EmailService:
         except Exception:
             pass
 
-        emails_today = max(today_db_count, cls._last_sync_stats["cumulative_fetched_today"], persisted_today, db_total)
+        emails_today = max(today_db_count, cls._last_sync_stats["cumulative_fetched_today"], persisted_today)
 
         status = "healthy"
         if cls._last_sync_stats["last_error"]:
