@@ -483,6 +483,14 @@ def create_task_in_notion(candidate_id: int, payload: Optional[TaskCandidateUpda
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidate not found")
 
+    if candidate.status == "CREATED" or candidate.notion_page_id:
+        return {
+            "message": "Task already created in Notion",
+            "candidate_id": candidate.id,
+            "notion_url": candidate.notion_url,
+            "notion_page_id": candidate.notion_page_id
+        }
+
     if payload:
         update_data = payload.model_dump(exclude_unset=True)
         for field, val in update_data.items():

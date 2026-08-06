@@ -12,7 +12,7 @@
           <span>📩 Received: <span id="review-email-received"></span></span>
         </div>
       </div>
-      <button class="modal-close-btn" onclick="closeTaskReviewModal()">&times;</button>
+      <button id="review-modal-close-btn" class="modal-close-btn" onclick="closeTaskReviewModal()">&times;</button>
     </div>
 
     <!-- Mobile Sub-navigation Tabs for Review Modal -->
@@ -33,7 +33,8 @@
 
         <div>
           <label style="display:block; font-size:12px; color:var(--text-muted); font-weight:600; margin-bottom:6px;">Task Title</label>
-          <input id="review-title" class="text-input" type="text" maxlength="255" style="font-weight:600; font-size:14px;">
+          <input id="review-title" class="text-input" type="text" maxlength="255" oninput="clearReviewTitleError()" style="font-weight:600; font-size:14px;">
+          <div id="review-title-error" style="display:none; color:#ef4444; font-size:12px; margin-top:4px; font-weight:600;">⚠️ Task title cannot be empty</div>
         </div>
 
         <!-- Single row on desktop, stacked on mobile for Priority, Start Date, and Deadline -->
@@ -86,8 +87,8 @@
     </div>
 
     <div class="modal-footer">
-      <button class="btn btn-outline btn-sm" onclick="closeTaskReviewModal()">Cancel</button>
-      <button class="btn btn-success btn-sm" onclick="submitReviewedTaskToNotion()" style="font-weight:600;">Confirm</button>
+      <button id="review-cancel-btn" class="btn btn-outline btn-sm" onclick="closeTaskReviewModal()">Cancel</button>
+      <button id="review-confirm-btn" class="btn btn-success btn-sm" onclick="submitReviewedTaskToNotion()" style="font-weight:600;">Confirm</button>
     </div>
   </div>
 </div>

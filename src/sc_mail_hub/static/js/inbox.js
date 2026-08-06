@@ -332,10 +332,19 @@ function closeShortcutsModal(e) {
 
 function handleCandidateKeyboardShortcuts(e) {
   if (e.key === "Escape") {
+    if (typeof isTaskReviewSubmitting !== "undefined" && isTaskReviewSubmitting) {
+      e.preventDefault();
+      return;
+    }
     const activeModals = document.querySelectorAll(".modal-overlay.active, .modal.active, .modal-backdrop.active");
     if (activeModals.length > 0) {
       e.preventDefault();
-      activeModals.forEach(m => m.classList.remove("active"));
+      const taskReviewModal = document.getElementById("task-review-modal");
+      if (taskReviewModal && taskReviewModal.classList.contains("active")) {
+        closeTaskReviewModal();
+      } else {
+        activeModals.forEach(m => m.classList.remove("active"));
+      }
       return;
     }
     clearCandidateFocus();

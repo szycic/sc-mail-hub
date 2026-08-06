@@ -174,6 +174,9 @@ async function fillTaskReviewForm(candidate) {
   switchReviewModalTab('form');
 
 
+  clearReviewTitleError();
+  setTaskReviewFormSubmittingState(false);
+
   // Populate Right Column: Original Email Reference with Link Highlighting
   const senderEl = document.getElementById("review-email-sender");
   const recipientEl = document.getElementById("review-email-recipient");
@@ -233,30 +236,92 @@ function switchReviewModalTab(tab) {
   }
 }
 
+let isTaskReviewSubmitting = false;
+
+function setTaskReviewFormSubmittingState(isSubmitting) {
+  isTaskReviewSubmitting = isSubmitting;
+
+  const confirmBtn = document.getElementById("review-confirm-btn");
+  const cancelBtn = document.getElementById("review-cancel-btn");
+  const closeBtn = document.getElementById("review-modal-close-btn");
+
+  const formFields = [
+    document.getElementById("review-title"),
+    document.getElementById("review-priority"),
+    document.getElementById("review-start-date"),
+    document.getElementById("review-deadline"),
+    document.getElementById("review-summary"),
+    document.getElementById("review-url")
+  ];
+
+  formFields.forEach(field => {
+    if (field) field.disabled = isSubmitting;
+  });
+
+  if (cancelBtn) cancelBtn.disabled = isSubmitting;
+  if (closeBtn) closeBtn.disabled = isSubmitting;
+
+  if (confirmBtn) {
+    confirmBtn.disabled = isSubmitting;
+    if (isSubmitting) {
+      confirmBtn.innerHTML = '<span class="btn-spinner"></span>Creating task...';
+    } else {
+      confirmBtn.innerHTML = "Confirm";
+    }
+  }
+}
+
+function clearReviewTitleError() {
+  const titleInput = document.getElementById("review-title");
+  const titleError = document.getElementById("review-title-error");
+  if (titleInput) titleInput.style.borderColor = "";
+  if (titleError) titleError.style.display = "none";
+}
+
 function closeTaskReviewModal(e) {
+  if (isTaskReviewSubmitting) return;
   if (e && e.target && e.target !== e.currentTarget) return;
   const modal = document.getElementById("task-review-modal");
   if (modal) modal.classList.remove("active");
+  clearReviewTitleError();
+  setTaskReviewFormSubmittingState(false);
 }
 
 
 async function submitReviewedTaskToNotion() {
+  if (isTaskReviewSubmitting) return;
+
   const candidateId = Number(document.getElementById("review-candidate-id")?.value || 0);
   if (!candidateId) {
     showToast("Missing candidate id", "error");
     return;
   }
 
+  const titleInput = document.getElementById("review-title");
+  const titleError = document.getElementById("review-title-error");
+  const title = (titleInput?.value || "").trim();
+  if (!title) {
+    if (titleInput) {
+      titleInput.style.borderColor = "#ef4444";
+      titleInput.focus();
+    }
+    if (titleError) {
+      titleError.style.display = "block";
+    }
+    return;
+  }
+  clearReviewTitleError();
+
+  setTaskReviewFormSubmittingState(true);
+
   const payload = {
-    title: document.getElementById("review-title")?.value || "",
+    title: title,
     summary: document.getElementById("review-summary")?.value || "",
     source_url: document.getElementById("review-url")?.value || null,
     priority: document.getElementById("review-priority")?.value || "MEDIUM",
     start_date: document.getElementById("review-start-date")?.value || null,
     deadline: document.getElementById("review-deadline")?.value || null
   };
-
-  showToast("Creating reviewed task in Notion...", "info");
 
   try {
     const res = await fetch(`/api/inbox/candidates/${candidateId}/create-task`, {
@@ -267,13 +332,27 @@ async function submitReviewedTaskToNotion() {
     const data = await res.json();
 
     if (res.ok && data.notion_url) {
+      setTaskReviewFormSubmittingState(false);
       closeTaskReviewModal();
       showToast("Task successfully created in Notion!", "success");
       loadCandidates();
     } else {
       showToast(data.detail || "Failed to create task in Notion", "error");
+      setTaskReviewFormSubmittingState(false);
     }
   } catch (err) {
     showToast(`Error: ${err.message}`, "error");
+    setTaskReviewFormSubmittingState(false);
   }
 }
+
+// Global shortcut listener for Ctrl+Enter / Cmd+Enter inside Task Review modal
+document.addEventListener("keydown", function (e) {
+  if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+    const modal = document.getElementById("task-review-modal");
+    if (modal && modal.classList.contains("active")) {
+      e.preventDefault();
+      submitReviewedTaskToNotion();
+    }
+  }
+});
