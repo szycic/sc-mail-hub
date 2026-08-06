@@ -69,6 +69,8 @@ def init_db():
             "ALTER TABLE system_settings ADD COLUMN vapid_private_key TEXT",
             "ALTER TABLE system_settings ADD COLUMN vapid_public_key TEXT",
             "ALTER TABLE system_settings ADD COLUMN vapid_claims_sub VARCHAR(255) DEFAULT 'mailto:admin@sc-mail-hub.local'",
+            "ALTER TABLE system_settings ADD COLUMN daily_ingested_count INTEGER DEFAULT 0",
+            "ALTER TABLE system_settings ADD COLUMN daily_ingested_date VARCHAR(10)",
         ]
         for sql in migrations:
             try:

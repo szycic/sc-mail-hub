@@ -1071,6 +1071,7 @@ function bulkOpenNotionTasks() {
 }
 
 async function ignoreCandidate(candidateId) {
+  const cand = Array.isArray(currentCandidates) ? currentCandidates.find(c => c.id === candidateId) : null;
   const card = document.getElementById(`candidate-card-${candidateId}`);
   if (card) {
     card.style.transition = "opacity 0.2s ease, transform 0.2s ease";
@@ -1083,7 +1084,11 @@ async function ignoreCandidate(candidateId) {
       method: "POST"
     });
     if (res.ok) {
-      showToast("Task candidate ignored", "info");
+      if (cand) {
+        quickRuleCandidateContext = cand;
+      }
+      const toastHtml = `Task candidate ignored. <button class="btn btn-outline btn-xs" style="margin-left:8px; padding:2px 8px; font-size:11px; font-weight:600; cursor:pointer; background:rgba(239, 68, 68, 0.15); border-color:#ef4444; color:#ef4444;" onclick="openQuickRuleModal(${candidateId})">🛡️ Always ignore?</button>`;
+      showToast(toastHtml, "info", false, true, 8000);
       loadCandidates();
     } else {
       if (card) {
@@ -1389,5 +1394,163 @@ function renderPagination() {
       ${pageButtonsHtml}
     </div>
   `;
+}
+
+// --- Quick Auto-Ignore Rule Modal Logic ---
+let quickRuleCandidateContext = null;
+
+function extractCleanEmailAddress(senderStr) {
+  if (!senderStr) return "";
+  const match = senderStr.match(/<([^>]+)>/);
+  if (match) return match[1].trim().toLowerCase();
+  return senderStr.trim().toLowerCase();
+}
+
+function extractEmailDomainFromSender(senderStr) {
+  const addr = extractCleanEmailAddress(senderStr);
+  if (addr.includes("@")) {
+    return addr.split("@").pop().trim().toLowerCase();
+  }
+  return addr;
+}
+
+function openQuickRuleModal(candidateId) {
+  let cand = null;
+  if (quickRuleCandidateContext && quickRuleCandidateContext.id === candidateId) {
+    cand = quickRuleCandidateContext;
+  } else if (Array.isArray(currentCandidates)) {
+    cand = currentCandidates.find(c => c.id === candidateId);
+  }
+
+  const modal = document.getElementById("quick-rule-modal");
+  if (!modal) return;
+
+  const senderEl = document.getElementById("quick-rule-context-sender");
+  const subjectEl = document.getElementById("quick-rule-context-subject");
+  const nameInput = document.getElementById("quick-rule-name");
+  const typeSelect = document.getElementById("quick-rule-type");
+  const patternInput = document.getElementById("quick-rule-pattern");
+  const retroCheck = document.getElementById("quick-rule-apply-retroactive");
+
+  const sender = cand ? (cand.sender || "") : "";
+  const subject = cand ? (cand.subject || "") : "";
+  const domain = extractEmailDomainFromSender(sender);
+  const cleanAddr = extractCleanEmailAddress(sender);
+
+  quickRuleCandidateContext = cand;
+
+  if (senderEl) senderEl.textContent = sender ? `📧 From: ${sender}` : "📧 From: Unknown Sender";
+  if (subjectEl) subjectEl.textContent = subject ? `✉️ Subject: ${subject}` : "✉️ Subject: (No Subject)";
+
+  if (typeSelect) typeSelect.value = "sender_domain";
+  if (patternInput) patternInput.value = domain || cleanAddr || "example.com";
+  if (nameInput) nameInput.value = domain ? `Auto-Ignore domain: ${domain}` : `Auto-Ignore sender: ${cleanAddr}`;
+  if (retroCheck) retroCheck.checked = true;
+
+  modal.classList.add("active");
+}
+
+function onQuickRuleTypeChange() {
+  const typeSelect = document.getElementById("quick-rule-type");
+  const nameInput = document.getElementById("quick-rule-name");
+  const patternInput = document.getElementById("quick-rule-pattern");
+
+  if (!typeSelect || !nameInput || !patternInput) return;
+
+  const ruleType = typeSelect.value;
+  const cand = quickRuleCandidateContext;
+  const sender = cand ? (cand.sender || "") : "";
+  const subject = cand ? (cand.subject || "") : "";
+  const domain = extractEmailDomainFromSender(sender);
+  const cleanAddr = extractCleanEmailAddress(sender);
+
+  if (ruleType === "sender_domain") {
+    patternInput.value = domain || cleanAddr;
+    nameInput.value = domain ? `Auto-Ignore domain: ${domain}` : `Auto-Ignore domain`;
+  } else if (ruleType === "sender_contains") {
+    patternInput.value = cleanAddr || sender;
+    nameInput.value = cleanAddr ? `Auto-Ignore sender: ${cleanAddr}` : `Auto-Ignore sender`;
+  } else if (ruleType === "subject_keyword") {
+    const kw = subject ? subject.split(" ").slice(0, 3).join(" ") : "newsletter";
+    patternInput.value = kw.toLowerCase();
+    nameInput.value = `Auto-Ignore subject: ${kw}`;
+  } else if (ruleType === "subject_regex") {
+    patternInput.value = subject ? `(${subject.slice(0, 20)})` : ".*";
+    nameInput.value = `Auto-Ignore regex rule`;
+  }
+}
+
+function closeQuickRuleModal(e) {
+  if (e && e.target !== e.currentTarget) return;
+  const modal = document.getElementById("quick-rule-modal");
+  if (modal) modal.classList.remove("active");
+}
+
+async function submitQuickRule() {
+  const nameInput = document.getElementById("quick-rule-name");
+  const typeSelect = document.getElementById("quick-rule-type");
+  const patternInput = document.getElementById("quick-rule-pattern");
+  const retroCheck = document.getElementById("quick-rule-apply-retroactive");
+  const submitBtn = document.getElementById("quick-rule-submit-btn");
+
+  const name = nameInput ? nameInput.value.trim() : "";
+  const rule_type = typeSelect ? typeSelect.value : "sender_domain";
+  const pattern = patternInput ? patternInput.value.trim() : "";
+  const applyRetroactive = retroCheck ? retroCheck.checked : true;
+
+  if (!name) {
+    showToast("Please enter a rule name", "error");
+    return;
+  }
+  if (!pattern) {
+    showToast("Please enter a pattern to match", "error");
+    return;
+  }
+
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.textContent = "🛡️ Saving Rule...";
+  }
+
+  try {
+    const res = await fetch("/api/rules", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: name,
+        rule_type: rule_type,
+        pattern: pattern,
+        is_active: true
+      })
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.detail || "Failed to create auto-ignore rule");
+    }
+
+    let applyMsg = "";
+    if (applyRetroactive) {
+      const applyRes = await fetch("/api/rules/apply", { method: "POST" });
+      if (applyRes.ok) {
+        const applyData = await applyRes.json();
+        applyMsg = ` ${applyData.ignored_count || 0} candidate(s) ignored retroactively.`;
+      }
+    }
+
+    showToast(`Auto-Ignore Rule "${name}" created!${applyMsg}`, "success");
+    closeQuickRuleModal();
+    loadCandidates();
+    if (typeof loadAutoIgnoreRules === "function") {
+      loadAutoIgnoreRules();
+    }
+  } catch (err) {
+    showToast(`Error: ${err.message}`, "error");
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = "🛡️ Save & Apply Rule";
+    }
+  }
 }
 

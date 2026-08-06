@@ -144,6 +144,10 @@ class SystemSettings(Base):
     vapid_public_key = Column(Text, nullable=True)
     vapid_claims_sub = Column(String(255), default="mailto:admin@sc-mail-hub.local")
 
+    # Persistent Daily IMAP Activity Tracking
+    daily_ingested_count = Column(Integer, default=0)
+    daily_ingested_date = Column(String(10), nullable=True)
+
     updated_at = Column(DateTime, default=_utc_now, onupdate=_utc_now)
 
 

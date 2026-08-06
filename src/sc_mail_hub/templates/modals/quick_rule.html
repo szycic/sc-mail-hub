@@ -1,0 +1,79 @@
+<!-- Quick Auto-Ignore Rule Modal -->
+<div id="quick-rule-modal" class="modal-overlay" onclick="closeQuickRuleModal(event)">
+  <div class="modal-card" onclick="event.stopPropagation()" style="max-width: 520px; width: 92vw;">
+    <div class="modal-header">
+      <div>
+        <span class="type-pill"
+          style="margin-bottom:6px; display:inline-block; background:rgba(239, 68, 68, 0.15); color:#ef4444;">🛡️
+          Auto-Ignore Rule Generator</span>
+        <h3 style="font-size:18px; color:var(--text-main); margin-bottom:4px;">Create Auto-Ignore Rule</h3>
+        <div style="font-size:13px; color:var(--text-muted);">
+          Automatically ignore future emails matching this pattern.
+        </div>
+      </div>
+      <button class="modal-close-btn" onclick="closeQuickRuleModal()">&times;</button>
+    </div>
+
+    <div class="modal-body" style="display:flex; flex-direction:column; gap:16px; padding-top:12px;">
+      <!-- Email Context Reference Box -->
+      <div
+        style="background:var(--bg-hover, rgba(255,255,255,0.04)); border:1px solid var(--border-color, rgba(255,255,255,0.1)); border-radius:8px; padding:10px 14px; font-size:13px;">
+        <div
+          style="color:var(--text-muted); font-size:11px; font-weight:600; text-transform:uppercase; margin-bottom:4px;">
+          Context Email</div>
+        <div
+          style="color:var(--text-main); font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"
+          id="quick-rule-context-sender"></div>
+        <div
+          style="color:var(--text-muted); font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"
+          id="quick-rule-context-subject"></div>
+      </div>
+
+      <!-- Rule Name -->
+      <div>
+        <label style="display:block; font-size:12px; color:var(--text-muted); font-weight:600; margin-bottom:6px;">Rule
+          Name</label>
+        <input id="quick-rule-name" class="text-input" type="text" placeholder="e.g. Ignore domain newsletter.com"
+          style="font-weight:600;">
+      </div>
+
+      <!-- Rule Type Selector -->
+      <div>
+        <label style="display:block; font-size:12px; color:var(--text-muted); font-weight:600; margin-bottom:6px;">Match
+          Criteria Type</label>
+        <select id="quick-rule-type" class="select-input" onchange="onQuickRuleTypeChange()" style="font-weight:500;">
+          <option value="sender_domain">🌐 Sender Domain (e.g. newsletter.com)</option>
+          <option value="sender_contains">📧 Sender Substring / Address (e.g. no-reply@)</option>
+          <option value="subject_keyword">🔤 Subject Line Keyword (e.g. Digest)</option>
+          <option value="subject_regex">⚡ Subject Regular Expression</option>
+        </select>
+      </div>
+
+      <!-- Pattern Input -->
+      <div>
+        <label
+          style="display:block; font-size:12px; color:var(--text-muted); font-weight:600; margin-bottom:6px;">Pattern to
+          Match</label>
+        <input id="quick-rule-pattern" class="text-input" type="text" placeholder="e.g. example.com">
+      </div>
+
+      <!-- Apply Retroactively Checkbox -->
+      <div style="display:flex; align-items:center; gap:8px; margin-top:4px;">
+        <input type="checkbox" id="quick-rule-apply-retroactive" checked
+          style="width:16px; height:16px; cursor:pointer;">
+        <label for="quick-rule-apply-retroactive"
+          style="font-size:13px; color:var(--text-main); cursor:pointer; font-weight:500;">
+          Apply rule immediately to existing candidates in Inbox
+        </label>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-outline btn-sm" onclick="closeQuickRuleModal()">Cancel</button>
+      <button id="quick-rule-submit-btn" class="btn btn-danger btn-sm" onclick="submitQuickRule()"
+        style="font-weight:600;">
+        🛡️ Save & Apply Rule
+      </button>
+    </div>
+  </div>
+</div>

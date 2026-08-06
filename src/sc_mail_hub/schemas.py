@@ -227,3 +227,38 @@ class PushSubscriptionCreate(BaseModel):
 class PushSubscriptionUnsubscribe(BaseModel):
     endpoint: str
 
+
+# --- Diagnostic & Config Backup Schemas ---
+class DiagnosticCheckResult(BaseModel):
+    """Schema for individual component diagnostic check result."""
+    name: str
+    status: str  # 'success', 'warning', 'failed'
+    latency_ms: float
+    details: str
+    extra: Optional[Dict[str, Any]] = None
+
+
+class SystemDiagnosticsResponse(BaseModel):
+    """Response payload for system health diagnostic tool."""
+    timestamp: str
+    overall_status: str  # 'ok', 'warning', 'error'
+    total_duration_ms: float
+    results: Dict[str, DiagnosticCheckResult]
+
+
+class ConfigExportPayload(BaseModel):
+    """Payload representing exported configuration backup JSON file."""
+    version: str = "1.0"
+    exported_at: str
+    system_settings: Dict[str, Any]
+    field_mappings: List[Dict[str, Any]]
+    auto_ignore_rules: List[Dict[str, Any]]
+
+
+class ConfigImportRequest(BaseModel):
+    """Payload for importing system configuration backup."""
+    system_settings: Optional[Dict[str, Any]] = None
+    field_mappings: Optional[List[Dict[str, Any]]] = None
+    auto_ignore_rules: Optional[List[Dict[str, Any]]] = None
+
+

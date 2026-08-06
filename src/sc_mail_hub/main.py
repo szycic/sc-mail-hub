@@ -161,7 +161,10 @@ def trigger_immediate_email_sync():
 
 def _run_email_sync() -> bool:
     """Synchronous worker thread function to fetch IMAP emails without blocking main asyncio event loop."""
+    import time
+    start_time = time.time()
     db = SessionLocal()
+    fetched_total = 0
     try:
         sys_set = db.query(SystemSettings).first()
         if not sys_set or not sys_set.imap_sync_enabled:
@@ -173,11 +176,17 @@ def _run_email_sync() -> bool:
 
         for acc in accs:
             msgs = EmailService.fetch_from_imap(acc, db)
+            fetched_total += len(msgs)
             for msg in msgs:
                 AIService.ensure_candidate_from_email(msg, db)
+
+        duration = time.time() - start_time
+        EmailService.update_sync_stats(db=db, duration=duration, fetched_count=fetched_total, error=None)
         return True
     except Exception as err:
+        duration = time.time() - start_time
         logger.error(f"Background email sync error: {err}")
+        EmailService.update_sync_stats(db=db, duration=duration, fetched_count=fetched_total, error=str(err))
         return False
     finally:
         db.close()

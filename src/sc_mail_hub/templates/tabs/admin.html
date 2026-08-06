@@ -1,4 +1,60 @@
 <section id="tab-admin" class="tab-content">
+
+  <!-- Compact Top Banner: IMAP Activity -->
+  <div style="background:rgba(15, 23, 42, 0.6); padding:16px; border-radius:10px; border:1px solid rgba(59, 130, 246, 0.3); margin-bottom:24px;">
+    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:12px;">
+      <span style="font-size:13px; font-weight:700; color:var(--text-main); display:flex; align-items:center; gap:6px;">
+        📊 IMAP Activity
+      </span>
+      <button type="button" class="btn btn-outline btn-sm" onclick="loadSyncHealthStats()" style="font-size:11px; padding:3px 8px;">
+        🔄 Refresh Stats
+      </button>
+    </div>
+
+    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:12px;">
+      <!-- Pill 1: Duration -->
+      <div style="background:rgba(255,255,255,0.03); padding:12px; border-radius:8px; border:1px solid rgba(255,255,255,0.06); display:flex; flex-direction:column; gap:4px;">
+        <span style="font-size:11px; color:var(--text-dim);">⏱️ Last Sync Duration</span>
+        <span id="sync-stat-duration" style="font-size:16px; font-weight:700; color:#60a5fa;">0.0s</span>
+        <span id="sync-stat-time" style="font-size:10px; color:var(--text-muted);">Not synced yet</span>
+      </div>
+
+      <!-- Pill 2: Today's Emails -->
+      <div style="background:rgba(255,255,255,0.03); padding:12px; border-radius:8px; border:1px solid rgba(255,255,255,0.06); display:flex; flex-direction:column; gap:4px;">
+        <span style="font-size:11px; color:var(--text-dim);">📬 Emails Ingested Today</span>
+        <span id="sync-stat-today-count" style="font-size:16px; font-weight:700; color:#10b981;">0 emails</span>
+        <span style="font-size:10px; color:var(--text-muted);">Since midnight UTC</span>
+      </div>
+
+      <!-- Pill 3: Status / Error -->
+      <div style="background:rgba(255,255,255,0.03); padding:12px; border-radius:8px; border:1px solid rgba(255,255,255,0.06); display:flex; flex-direction:column; gap:4px;">
+        <span style="font-size:11px; color:var(--text-dim);">🩺 IMAP Engine Status</span>
+        <span id="sync-stat-status" style="font-size:13px; font-weight:700; color:#10b981;">🟢 Operational</span>
+        <span id="sync-stat-error" style="font-size:10px; color:var(--text-muted); word-break:break-all;">0 connection errors</span>
+      </div>
+    </div>
+
+    <!-- 7-Day Ingestion Volume Chart (Split by Account) -->
+    <div style="margin-top:16px; background:rgba(255,255,255,0.02); padding:14px; border-radius:8px; border:1px solid rgba(255,255,255,0.06);">
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:12px;">
+        <span style="font-size:12px; font-weight:600; color:var(--text-main); display:flex; align-items:center; gap:6px;">
+          📈 7-Day Ingestion Volume (by Account)
+        </span>
+        <!-- Account Colors Legend -->
+        <div id="sync-chart-legend" style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; font-size:11px;">
+        </div>
+      </div>
+
+      <!-- Bar Chart Flex Container -->
+      <div id="sync-chart-bars-container" style="display:flex; align-items:flex-end; justify-content:space-between; gap:12px; height:100px; padding-top:10px; border-bottom:1px solid rgba(255,255,255,0.08);">
+      </div>
+
+      <!-- Date Labels Row -->
+      <div id="sync-chart-labels-container" style="display:flex; justify-content:space-between; gap:12px; margin-top:8px; font-size:10px; color:var(--text-dim); text-align:center;">
+      </div>
+    </div>
+  </div>
+
   <form id="admin-settings-form" onsubmit="saveAdminSettings(event)">
 
     <!-- Card 1: Application Settings -->
@@ -128,9 +184,11 @@
               <label style="font-size:14px; font-weight:600; color:var(--text-main); display:block;">
                 Web Push Notifications (Closed-App Support)
               </label>
-              <span style="font-size:12px; color:var(--text-dim);">Receive native desktop/mobile alerts when incoming pending emails arrive even if PWA is closed</span>
+              <span style="font-size:12px; color:var(--text-dim);">Receive native desktop/mobile alerts when incoming
+                pending emails arrive even if PWA is closed</span>
             </div>
-            <button type="button" class="btn btn-outline btn-sm" onclick="sendTestPushNotification()" style="font-size:12px;">
+            <button type="button" class="btn btn-outline btn-sm" onclick="sendTestPushNotification()"
+              style="font-size:12px;">
               🔔 Send Test Push Notification
             </button>
           </div>
@@ -149,7 +207,7 @@
   </form>
 
 
-  <!-- Card 3: Auto-Ignore Rules -->
+  <!-- Card 2: Auto-Ignore Rules -->
   <div class="card" style="margin-bottom: 24px;">
     <div class="card-title">
       <span>🛡️ Auto-Ignore Rules</span>
@@ -259,24 +317,215 @@
 
   </div>
 
-  <!-- Card 4: Danger Zone -->
-  <div class="card" style="border: 1px solid rgba(239, 68, 68, 0.3);">
 
-    <div class="card-title" style="color: #ef4444;">
+  <!-- Card 3: System Health Diagnostics -->
+  <div class="card" style="margin-bottom: 24px;">
+    <div class="card-title"
+      style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+      <span>🩺 System Health Diagnostics</span>
+      <button type="button" class="btn btn-primary btn-sm" id="btn-run-diagnostics" onclick="runSystemDiagnostics()"
+        style="font-size:13px; padding:6px 14px;">
+        🧪 Run System Diagnostic
+      </button>
+    </div>
+    <p style="font-size:13px; color:var(--text-dim); margin-bottom:16px;">
+      Execute automated real-time connection and health checks across IMAP mail servers, Notion API authentication, AI
+      API endpoints, WebSocket health, and DB integrity.
+    </p>
+
+    <!-- Diagnostics Output Container -->
+    <div id="diagnostics-results-container" style="display:none;">
+      <!-- Diagnostic Summary Bar -->
+      <div id="diagnostics-summary-bar"
+        style="padding:12px 16px; border-radius:8px; margin-bottom:16px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08);">
+      </div>
+
+      <!-- Diagnostic Results Details Grid -->
+      <div id="diagnostics-details-grid"
+        style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:12px;">
+      </div>
+    </div>
+  </div>
+
+
+  <!-- Card 4: Configuration Backup & Restore -->
+  <div class="card" style="margin-bottom: 24px;">
+    <div class="card-title">
+      <span>📦 Configuration Import & Export</span>
+    </div>
+    <p style="font-size:13px; color:var(--text-dim); margin-bottom:16px;">
+      Export or import system administrative settings, Notion database field mappings, and auto-ignore rules as a
+      <code>.json</code> backup file to easily replicate configurations across deployments.
+    </p>
+
+    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:16px;">
+      <!-- Export Box -->
+      <div
+        style="background:rgba(255,255,255,0.02); padding:16px; border-radius:8px; border:1px solid rgba(255,255,255,0.06); display:flex; flex-direction:column; justify-content:space-between; gap:14px;">
+        <div>
+          <h4 style="font-size:14px; font-weight:600; color:var(--text-main); margin-bottom:4px;">📥 Export
+            Configuration</h4>
+          <span style="font-size:12px; color:var(--text-dim); display:block; margin-bottom:10px;">Select configuration
+            sections to include in JSON backup:</span>
+
+          <div
+            style="display:flex; flex-direction:column; gap:8px; font-size:12px; color:var(--text-muted); background:rgba(0,0,0,0.15); padding:10px; border-radius:6px;">
+            <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+              <input type="checkbox" id="export-opt-system-settings" checked
+                style="width:15px; height:15px; cursor:pointer; accent-color:var(--accent-gradient);">
+              <span>⚙️ Application System Settings</span>
+            </label>
+            <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+              <input type="checkbox" id="export-opt-field-mappings" checked
+                style="width:15px; height:15px; cursor:pointer; accent-color:var(--accent-gradient);">
+              <span>🗺️ Notion Database Field Mappings</span>
+            </label>
+            <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+              <input type="checkbox" id="export-opt-auto-ignore-rules" checked
+                style="width:15px; height:15px; cursor:pointer; accent-color:var(--accent-gradient);">
+              <span>🛡️ Auto-Ignore Ingestion Rules</span>
+            </label>
+          </div>
+        </div>
+        <div>
+          <button type="button" class="btn btn-outline" onclick="exportSystemConfig()"
+            style="width:100%; font-size:13px;">
+            📥 Export Selected Configuration (.json)
+          </button>
+        </div>
+      </div>
+
+      <!-- Import Box -->
+      <div id="import-box-card"
+        style="background:rgba(255,255,255,0.02); padding:16px; border-radius:8px; border:1px solid rgba(255,255,255,0.06); display:flex; flex-direction:column; justify-content:space-between; gap:14px;">
+
+        <!-- Initial State: Select File Prompt -->
+        <div id="import-state-initial" style="display:flex; flex-direction:column; justify-content:space-between; height:100%; gap:12px;">
+          <div>
+            <h4 style="font-size:14px; font-weight:600; color:var(--text-main); margin-bottom:4px;">📤 Import Configuration</h4>
+            <span style="font-size:12px; color:var(--text-dim);">Restore system settings, field mappings, and rules from JSON backup file</span>
+          </div>
+          <div>
+            <input type="file" id="config-import-input" accept=".json" style="display:none;" onchange="handleConfigImportFile(event)">
+            <button type="button" class="btn btn-outline" onclick="document.getElementById('config-import-input').click()" style="width:100%; font-size:13px;">
+              📤 Select Configuration File (.json)
+            </button>
+          </div>
+        </div>
+
+        <!-- Preview State: Loaded File Summary & Selective Checkboxes -->
+        <div id="import-state-preview" style="display:none; flex-direction:column; gap:12px;">
+          <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;">
+            <div>
+              <div style="font-size:13px; font-weight:700; color:#60a5fa; display:flex; align-items:center; gap:6px;">
+                <span>📄</span>
+                <span id="import-preview-filename" style="word-break:break-all;">backup.json</span>
+              </div>
+              <span style="font-size:11px; color:var(--text-dim);">Select sections to restore into deployment:</span>
+            </div>
+            <button type="button" class="btn btn-outline btn-sm" onclick="document.getElementById('config-import-input').click()" style="font-size:11px; padding:4px 8px;">
+              🔄 Change File
+            </button>
+          </div>
+
+          <!-- Selective Checkboxes -->
+          <div style="display:flex; flex-direction:column; gap:8px; font-size:12px; color:var(--text-muted); background:rgba(0,0,0,0.2); padding:10px; border-radius:6px; border:1px solid rgba(255,255,255,0.06);">
+            <label id="import-lbl-sys" style="display:flex; align-items:center; justify-content:space-between; gap:8px; cursor:pointer;">
+              <div style="display:flex; align-items:center; gap:8px;">
+                <input type="checkbox" id="import-chk-sys" checked style="width:15px; height:15px; cursor:pointer; accent-color:var(--accent-gradient);">
+                <span>⚙️ System Settings</span>
+              </div>
+              <span id="import-badge-sys" style="font-size:10px; padding:2px 6px; border-radius:10px; font-weight:600;">Available</span>
+            </label>
+
+            <label id="import-lbl-map" style="display:flex; align-items:center; justify-content:space-between; gap:8px; cursor:pointer;">
+              <div style="display:flex; align-items:center; gap:8px;">
+                <input type="checkbox" id="import-chk-map" checked style="width:15px; height:15px; cursor:pointer; accent-color:var(--accent-gradient);">
+                <span>🗺️ Notion Field Mappings</span>
+              </div>
+              <span id="import-badge-map" style="font-size:10px; padding:2px 6px; border-radius:10px; font-weight:600;">Available</span>
+            </label>
+
+            <label id="import-lbl-rules" style="display:flex; align-items:center; justify-content:space-between; gap:8px; cursor:pointer;">
+              <div style="display:flex; align-items:center; gap:8px;">
+                <input type="checkbox" id="import-chk-rules" checked style="width:15px; height:15px; cursor:pointer; accent-color:var(--accent-gradient);">
+                <span>🛡️ Auto-Ignore Rules</span>
+              </div>
+              <span id="import-badge-rules" style="font-size:10px; padding:2px 6px; border-radius:10px; font-weight:600;">Available</span>
+            </label>
+          </div>
+
+          <!-- Buttons -->
+          <div style="display:flex; gap:8px; margin-top:4px;">
+            <button type="button" class="btn btn-outline btn-sm" onclick="resetConfigImportPreview()" style="font-size:12px;">
+              Cancel
+            </button>
+            <button type="button" class="btn btn-primary btn-sm" id="btn-confirm-import" onclick="confirmConfigImport()" style="font-size:12px; flex:1; font-weight:600;">
+              📤 Confirm Import
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Card 5: Danger Zone -->
+  <div class="card" style="border: 1px solid rgba(239, 68, 68, 0.3);">
+    <div class="card-title" style="color: #ef4444; margin-bottom: 16px;">
       <span>⚠️ Danger Zone</span>
     </div>
-    <div
-      style="padding:12px 16px; background:rgba(239, 68, 68, 0.05); border-radius:8px; border:1px solid rgba(239,68,68,0.2); display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
-      <div>
-        <h4 style="font-size:14px; font-weight:700; color:var(--text-main); margin-bottom:2px;">Empty Inbox & Reset
-          Database</h4>
-        <span style="font-size:12px; color:var(--text-dim);">Permanently purges all candidates, downloaded emails, and
-          IMAP markers</span>
+
+    <div style="display:flex; flex-direction:column; gap:12px;">
+
+      <!-- Danger Action 1: Reset Database & Empty Inbox -->
+      <div
+        style="padding:12px 16px; background:rgba(239, 68, 68, 0.05); border-radius:8px; border:1px solid rgba(239,68,68,0.2); display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+        <div>
+          <h4 style="font-size:14px; font-weight:700; color:var(--text-main); margin-bottom:2px;">Purge Candidates & Reset Database</h4>
+          <span style="font-size:12px; color:var(--text-dim);">Permanently purges all task candidates, downloaded emails, PDFs, and IMAP markers</span>
+        </div>
+        <button type="button" class="btn btn-outline btn-sm" style="color:#ef4444; border-color:#ef4444; background:rgba(239,68,68,0.1); font-size:12px; font-weight:600;" onclick="emptyInbox()">
+          🗑️ Reset Database
+        </button>
       </div>
-      <button class="btn btn-outline" style="color:#ef4444; border-color:#ef4444; background:rgba(239,68,68,0.1);"
-        onclick="emptyInbox()">
-        🗑️ Reset Database
-      </button>
+
+      <!-- Danger Action 2: Purge Ignored Task Candidates -->
+      <div
+        style="padding:12px 16px; background:rgba(239, 68, 68, 0.05); border-radius:8px; border:1px solid rgba(239,68,68,0.2); display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+        <div>
+          <h4 style="font-size:14px; font-weight:700; color:var(--text-main); margin-bottom:2px;">Purge Ignored Task Candidates</h4>
+          <span style="font-size:12px; color:var(--text-dim);">Immediately purges all candidate items currently marked as IGNORED</span>
+        </div>
+        <button type="button" class="btn btn-outline btn-sm" style="color:#ef4444; border-color:#ef4444; background:rgba(239,68,68,0.1); font-size:12px; font-weight:600;" onclick="purgeIgnoredCandidatesNow()">
+          🧹 Purge Ignored
+        </button>
+      </div>
+
+      <!-- Danger Action 3: Reset System Settings to Factory Defaults -->
+      <div
+        style="padding:12px 16px; background:rgba(239, 68, 68, 0.05); border-radius:8px; border:1px solid rgba(239,68,68,0.2); display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+        <div>
+          <h4 style="font-size:14px; font-weight:700; color:var(--text-main); margin-bottom:2px;">Reset Settings to Factory Defaults</h4>
+          <span style="font-size:12px; color:var(--text-dim);">Reverts polling intervals, UI refresh timings, and retention days back to defaults</span>
+        </div>
+        <button type="button" class="btn btn-outline btn-sm" style="color:#ef4444; border-color:#ef4444; background:rgba(239,68,68,0.1); font-size:12px; font-weight:600;" onclick="resetSettingsToDefaults()">
+          ⚙️ Reset Settings
+        </button>
+      </div>
+
+      <!-- Danger Action 4: Delete All Auto-Ignore Rules -->
+      <div
+        style="padding:12px 16px; background:rgba(239, 68, 68, 0.05); border-radius:8px; border:1px solid rgba(239,68,68,0.2); display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+        <div>
+          <h4 style="font-size:14px; font-weight:700; color:var(--text-main); margin-bottom:2px;">Purge All Auto-Ignore Rules</h4>
+          <span style="font-size:12px; color:var(--text-dim);">Deletes all custom email ingestion filtering rules from the database</span>
+        </div>
+        <button type="button" class="btn btn-outline btn-sm" style="color:#ef4444; border-color:#ef4444; background:rgba(239,68,68,0.1); font-size:12px; font-weight:600;" onclick="purgeAllAutoIgnoreRules()">
+          🛡️ Purge All Rules
+        </button>
+      </div>
+
     </div>
   </div>
 </section>

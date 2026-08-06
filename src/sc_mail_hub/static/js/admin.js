@@ -63,8 +63,113 @@ async function loadAdminSettings() {
     setupAutoRefreshTimer();
     await loadAutoIgnoreRules();
     await checkPushNotificationStatus();
+    await loadSyncHealthStats();
   } catch (err) {
     console.error("Error loading admin settings:", err);
+  }
+}
+
+async function loadSyncHealthStats() {
+  try {
+    const res = await fetch("/api/admin/sync-health");
+    if (!res.ok) return;
+    const data = await res.json();
+
+    const durEl = document.getElementById("sync-stat-duration");
+    const timeEl = document.getElementById("sync-stat-time");
+    const countEl = document.getElementById("sync-stat-today-count");
+    const statusEl = document.getElementById("sync-stat-status");
+    const errEl = document.getElementById("sync-stat-error");
+
+    if (durEl) {
+      durEl.textContent = `${data.last_sync_duration_seconds || 0.0}s`;
+    }
+    if (timeEl) {
+      timeEl.textContent = data.last_synced_at ? `Last sync: ${formatTimeAgo(data.last_synced_at)}` : "Not synced yet";
+    }
+    if (countEl) {
+      countEl.textContent = `${data.emails_fetched_today || 0} emails`;
+    }
+
+    if (statusEl && errEl) {
+      if (data.status === "error" || data.last_error) {
+        statusEl.textContent = "🔴 Error / Degraded";
+        statusEl.style.color = "#ef4444";
+        errEl.textContent = data.last_error || "Connection failure";
+        errEl.style.color = "#f87171";
+      } else {
+        statusEl.textContent = "🟢 Operational";
+        statusEl.style.color = "#10b981";
+        errEl.textContent = "0 connection errors";
+        errEl.style.color = "var(--text-muted)";
+      }
+    }
+
+    await loadSyncChartData();
+  } catch (err) {
+    console.error("Error loading sync health stats:", err);
+  }
+}
+
+async function loadSyncChartData() {
+  const legendEl = document.getElementById("sync-chart-legend");
+  const barsEl = document.getElementById("sync-chart-bars-container");
+  const labelsEl = document.getElementById("sync-chart-labels-container");
+  if (!barsEl || !labelsEl) return;
+
+  try {
+    const res = await fetch("/api/admin/sync-chart-data");
+    if (!res.ok) return;
+    const data = await res.json();
+
+    const days = data.days || [];
+    const series = data.series || [];
+
+    if (legendEl) {
+      if (series.length === 0) {
+        legendEl.innerHTML = `<span style="color:var(--text-dim);">No active accounts</span>`;
+      } else {
+        legendEl.innerHTML = series.map(s => `
+          <span style="display:inline-flex; align-items:center; gap:5px; color:var(--text-main);">
+            <span style="width:8px; height:8px; border-radius:50%; background:${s.color}; display:inline-block;"></span>
+            ${escapeHtml(s.account_name)}
+          </span>
+        `).join("");
+      }
+    }
+
+    const dayTotals = days.map((_, dayIdx) => {
+      return series.reduce((sum, s) => sum + (s.counts[dayIdx] || 0), 0);
+    });
+    const maxVal = Math.max(...dayTotals, 1);
+
+    barsEl.innerHTML = days.map((dayLabel, dayIdx) => {
+      const total = dayTotals[dayIdx];
+      const segmentsHtml = series.map(s => {
+        const val = s.counts[dayIdx] || 0;
+        if (val === 0) return "";
+        const pct = ((val / total) * 100).toFixed(1);
+        return `<div title="${escapeHtml(s.account_name)}: ${val} emails" style="height:${pct}%; background:${s.color}; width:100%; transition:height 0.3s ease;"></div>`;
+      }).join("");
+
+      const heightPct = Math.max(Math.round((total / maxVal) * 100), total > 0 ? 8 : 4);
+
+      return `
+        <div style="flex:1; display:flex; flex-direction:column; align-items:center; height:100%; justify-content:flex-end;">
+          <span style="font-size:9px; color:var(--text-dim); margin-bottom:2px; opacity:${total > 0 ? '1' : '0.4'};">${total}</span>
+          <div style="width:70%; max-width:28px; height:${heightPct}%; background:rgba(255,255,255,0.04); border-radius:4px 4px 0 0; display:flex; flex-direction:column-reverse; overflow:hidden; border:1px solid rgba(255,255,255,0.08);" title="${dayLabel}: ${total} total emails">
+            ${segmentsHtml}
+          </div>
+        </div>
+      `;
+    }).join("");
+
+    labelsEl.innerHTML = days.map(dayLabel => `
+      <div style="flex:1;">${escapeHtml(dayLabel)}</div>
+    `).join("");
+
+  } catch (err) {
+    console.error("Error loading sync chart data:", err);
   }
 }
 
@@ -246,7 +351,7 @@ async function applyAutoIgnoreRulesNow() {
     const res = await fetch("/api/rules/apply", { method: "POST" });
     const data = await res.json();
     if (res.ok) {
-      const msg = data.ignored_count > 0 
+      const msg = data.ignored_count > 0
         ? `Applied rules! ${data.ignored_count} candidate(s) newly marked as IGNORED.`
         : `Applied rules to ${data.evaluated_count} candidate(s). No new matches found.`;
       showToast(msg, data.ignored_count > 0 ? "success" : "info");
@@ -406,3 +511,353 @@ async function sendTestPushNotification() {
     showToast(`Push test error: ${err.message}`, "error");
   }
 }
+
+async function runSystemDiagnostics() {
+  const btn = document.getElementById("btn-run-diagnostics");
+  const container = document.getElementById("diagnostics-results-container");
+  const summaryBar = document.getElementById("diagnostics-summary-bar");
+  const detailsGrid = document.getElementById("diagnostics-details-grid");
+
+  if (!container || !summaryBar || !detailsGrid) return;
+
+  const origBtnText = btn ? btn.innerHTML : "🧪 Run System Diagnostic";
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = `⏳ Testing Systems...`;
+  }
+
+  container.style.display = "block";
+  summaryBar.innerHTML = `<span style="font-size:13px; color:var(--text-dim);">Running diagnostic tests across IMAP, Notion, AI, WebSocket, and Database...</span>`;
+  detailsGrid.innerHTML = `
+    <div style="padding:16px; background:rgba(255,255,255,0.02); border-radius:8px; border:1px solid rgba(255,255,255,0.06); text-align:center; color:var(--text-muted); grid-column: 1 / -1;">
+      Executing tests...
+    </div>
+  `;
+
+  try {
+    const res = await fetch("/api/admin/diagnostics/run", { method: "POST" });
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      showToast(errData.detail || "System diagnostics test failed.", "error");
+      summaryBar.innerHTML = `<span style="color:#ef4444; font-weight:600;">❌ Diagnostic Execution Error</span>`;
+      detailsGrid.innerHTML = `<div style="color:#ef4444; padding:12px; grid-column:1 / -1;">Failed to execute system diagnostics.</div>`;
+      return;
+    }
+
+    const data = await res.json();
+    const results = data.results || {};
+
+    let overallBadge = "";
+    if (data.overall_status === "ok") {
+      overallBadge = `<span style="background:rgba(16,185,129,0.15); color:#10b981; border:1px solid rgba(16,185,129,0.3); padding:4px 10px; border-radius:20px; font-weight:600; font-size:13px;">🟢 All Systems Operational</span>`;
+    } else if (data.overall_status === "warning") {
+      overallBadge = `<span style="background:rgba(245,158,11,0.15); color:#f59e0b; border:1px solid rgba(245,158,11,0.3); padding:4px 10px; border-radius:20px; font-weight:600; font-size:13px;">🟡 Systems Degraded / Unconfigured</span>`;
+    } else {
+      overallBadge = `<span style="background:rgba(239,68,68,0.15); color:#ef4444; border:1px solid rgba(239,68,68,0.3); padding:4px 10px; border-radius:20px; font-weight:600; font-size:13px;">🔴 System Issues Detected</span>`;
+    }
+
+    summaryBar.innerHTML = `
+      <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+        ${overallBadge}
+        <span style="font-size:12px; color:var(--text-muted);">Completed 5 checks in <strong>${data.total_duration_ms} ms</strong></span>
+      </div>
+      <span style="font-size:11px; color:var(--text-dim); font-family:monospace;">${new Date(data.timestamp).toLocaleTimeString()}</span>
+    `;
+
+    const cardsHtml = Object.keys(results).map(key => {
+      const item = results[key];
+      let statusIcon = "🟢";
+      let statusBg = "rgba(16,185,129,0.05)";
+      let statusBorder = "rgba(16,185,129,0.2)";
+
+      if (item.status === "warning") {
+        statusIcon = "🟡";
+        statusBg = "rgba(245,158,11,0.05)";
+        statusBorder = "rgba(245,158,11,0.2)";
+      } else if (item.status === "failed") {
+        statusIcon = "🔴";
+        statusBg = "rgba(239,68,68,0.05)";
+        statusBorder = "rgba(239,68,68,0.2)";
+      }
+
+      return `
+        <div style="background:${statusBg}; border:1px solid ${statusBorder}; padding:14px; border-radius:8px; display:flex; flex-direction:column; justify-content:space-between; gap:8px;">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
+            <div style="font-weight:600; font-size:13px; color:var(--text-main); display:flex; align-items:center; gap:6px;">
+              <span>${statusIcon}</span>
+              <span>${escapeHtml(item.name)}</span>
+            </div>
+            <span style="font-size:11px; font-family:monospace; color:var(--text-muted); background:rgba(0,0,0,0.2); padding:2px 6px; border-radius:4px;">${item.latency_ms} ms</span>
+          </div>
+          <p style="font-size:12px; color:var(--text-muted); margin:0; line-height:1.4;">
+            ${escapeHtml(item.details)}
+          </p>
+        </div>
+      `;
+    }).join("");
+
+    detailsGrid.innerHTML = cardsHtml;
+    showToast("System diagnostic completed!", "success");
+
+  } catch (err) {
+    showToast(`Diagnostic error: ${err.message}`, "error");
+    summaryBar.innerHTML = `<span style="color:#ef4444; font-weight:600;">❌ Diagnostic Connection Error</span>`;
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = origBtnText;
+    }
+  }
+}
+
+let currentImportConfigPayload = null;
+
+function exportSystemConfig() {
+  const chkSys = document.getElementById("export-opt-system-settings");
+  const chkMap = document.getElementById("export-opt-field-mappings");
+  const chkRules = document.getElementById("export-opt-auto-ignore-rules");
+
+  const incSys = chkSys ? chkSys.checked : true;
+  const incMap = chkMap ? chkMap.checked : true;
+  const incRules = chkRules ? chkRules.checked : true;
+
+  if (!incSys && !incMap && !incRules) {
+    showToast("Please select at least one configuration item to export.", "warning");
+    return;
+  }
+
+  showToast("Preparing configuration download...", "info");
+  const url = `/api/admin/config/export?include_system_settings=${incSys}&include_field_mappings=${incMap}&include_auto_ignore_rules=${incRules}`;
+  window.location.href = url;
+}
+
+let loadedImportConfigPayload = null;
+
+async function handleConfigImportFile(event) {
+  const file = event.target.files ? event.target.files[0] : null;
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      let configJson = JSON.parse(e.target.result);
+
+      // Support raw rule array or alternative key naming
+      if (Array.isArray(configJson)) {
+        configJson = { auto_ignore_rules: configJson };
+      } else if (configJson && typeof configJson === "object") {
+        if (!configJson.auto_ignore_rules && Array.isArray(configJson.rules)) {
+          configJson.auto_ignore_rules = configJson.rules;
+        }
+        if (!configJson.field_mappings && Array.isArray(configJson.mappings)) {
+          configJson.field_mappings = configJson.mappings;
+        }
+        if (!configJson.system_settings && configJson.settings) {
+          configJson.system_settings = configJson.settings;
+        }
+      }
+
+      loadedImportConfigPayload = configJson;
+      renderImportConfigPreview(file.name, configJson);
+    } catch (err) {
+      showToast(`Invalid JSON configuration file: ${err.message}`, "error");
+      resetConfigImportPreview();
+    }
+  };
+
+  reader.readAsText(file);
+}
+
+function renderImportConfigPreview(filename, configJson) {
+  const initialState = document.getElementById("import-state-initial");
+  const previewState = document.getElementById("import-state-preview");
+  const fnLabel = document.getElementById("import-preview-filename");
+
+  if (!initialState || !previewState) return;
+
+  if (fnLabel) fnLabel.textContent = filename;
+
+  // System Settings
+  const chkSys = document.getElementById("import-chk-sys");
+  const lblSys = document.getElementById("import-lbl-sys");
+  const badgeSys = document.getElementById("import-badge-sys");
+  const hasSys = !!(configJson.system_settings && typeof configJson.system_settings === "object" && Object.keys(configJson.system_settings).length > 0);
+
+  if (chkSys) { chkSys.checked = hasSys; chkSys.disabled = !hasSys; }
+  if (lblSys) { lblSys.style.opacity = hasSys ? "1" : "0.5"; lblSys.style.cursor = hasSys ? "pointer" : "not-allowed"; }
+  if (badgeSys) {
+    badgeSys.textContent = hasSys ? "🟢 Available" : "⚪ Not in file";
+    badgeSys.style.background = hasSys ? "rgba(16,185,129,0.15)" : "rgba(255,255,255,0.05)";
+    badgeSys.style.color = hasSys ? "#10b981" : "var(--text-dim)";
+  }
+
+  // Field Mappings
+  const chkMap = document.getElementById("import-chk-map");
+  const lblMap = document.getElementById("import-lbl-map");
+  const badgeMap = document.getElementById("import-badge-map");
+  const mapCount = Array.isArray(configJson.field_mappings) ? configJson.field_mappings.length : 0;
+  const hasMap = mapCount > 0;
+
+  if (chkMap) { chkMap.checked = hasMap; chkMap.disabled = !hasMap; }
+  if (lblMap) { lblMap.style.opacity = hasMap ? "1" : "0.5"; lblMap.style.cursor = hasMap ? "pointer" : "not-allowed"; }
+  if (badgeMap) {
+    badgeMap.textContent = hasMap ? `🟢 ${mapCount} items` : "⚪ Not in file";
+    badgeMap.style.background = hasMap ? "rgba(16,185,129,0.15)" : "rgba(255,255,255,0.05)";
+    badgeMap.style.color = hasMap ? "#10b981" : "var(--text-dim)";
+  }
+
+  // Auto-Ignore Rules
+  const chkRules = document.getElementById("import-chk-rules");
+  const lblRules = document.getElementById("import-lbl-rules");
+  const badgeRules = document.getElementById("import-badge-rules");
+  const rulesCount = Array.isArray(configJson.auto_ignore_rules) ? configJson.auto_ignore_rules.length : 0;
+  const hasRules = rulesCount > 0;
+
+  if (chkRules) { chkRules.checked = hasRules; chkRules.disabled = !hasRules; }
+  if (lblRules) { lblRules.style.opacity = hasRules ? "1" : "0.5"; lblRules.style.cursor = hasRules ? "pointer" : "not-allowed"; }
+  if (badgeRules) {
+    badgeRules.textContent = hasRules ? `🟢 ${rulesCount} rules` : "⚪ Not in file";
+    badgeRules.style.background = hasRules ? "rgba(16,185,129,0.15)" : "rgba(255,255,255,0.05)";
+    badgeRules.style.color = hasRules ? "#10b981" : "var(--text-dim)";
+  }
+
+  initialState.style.display = "none";
+  previewState.style.display = "flex";
+}
+
+function resetConfigImportPreview() {
+  const initialState = document.getElementById("import-state-initial");
+  const previewState = document.getElementById("import-state-preview");
+  const fileInput = document.getElementById("config-import-input");
+
+  loadedImportConfigPayload = null;
+  if (fileInput) fileInput.value = "";
+  if (initialState) initialState.style.display = "flex";
+  if (previewState) previewState.style.display = "none";
+}
+
+async function confirmConfigImport() {
+  if (!loadedImportConfigPayload) {
+    showToast("No configuration payload found.", "error");
+    resetConfigImportPreview();
+    return;
+  }
+
+  const chkSys = document.getElementById("import-chk-sys");
+  const chkMap = document.getElementById("import-chk-map");
+  const chkRules = document.getElementById("import-chk-rules");
+
+  const incSys = chkSys && chkSys.checked && !chkSys.disabled;
+  const incMap = chkMap && chkMap.checked && !chkMap.disabled;
+  const incRules = chkRules && chkRules.checked && !chkRules.disabled;
+
+  if (!incSys && !incMap && !incRules) {
+    showToast("Please select at least one configuration section to import.", "warning");
+    return;
+  }
+
+  const payloadToImport = {};
+  if (incSys && loadedImportConfigPayload.system_settings) {
+    payloadToImport.system_settings = loadedImportConfigPayload.system_settings;
+  }
+  if (incMap && loadedImportConfigPayload.field_mappings) {
+    payloadToImport.field_mappings = loadedImportConfigPayload.field_mappings;
+  }
+  if (incRules && loadedImportConfigPayload.auto_ignore_rules) {
+    payloadToImport.auto_ignore_rules = loadedImportConfigPayload.auto_ignore_rules;
+  }
+
+  const confirmBtn = document.getElementById("btn-confirm-import");
+  const origBtnText = confirmBtn ? confirmBtn.innerHTML : "📤 Confirm Import";
+
+  if (confirmBtn) {
+    confirmBtn.disabled = true;
+    confirmBtn.innerHTML = `⏳ Importing...`;
+  }
+
+  try {
+    const res = await fetch("/api/admin/config/import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payloadToImport)
+    });
+
+    const data = await res.json();
+    if (res.ok) {
+      showToast(data.message || "Configuration imported successfully!", "success");
+      resetConfigImportPreview();
+      await loadAdminSettings();
+      if (typeof loadAutoIgnoreRules === "function") {
+        await loadAutoIgnoreRules();
+      }
+      if (typeof loadNotionMapping === "function") {
+        await loadNotionMapping();
+      }
+    } else {
+      showToast(data.detail || "Failed to import configuration.", "error");
+    }
+  } catch (err) {
+    showToast(`Error importing configuration: ${err.message}`, "error");
+  } finally {
+    if (confirmBtn) {
+      confirmBtn.disabled = false;
+      confirmBtn.innerHTML = origBtnText;
+    }
+  }
+}
+
+async function purgeAllAutoIgnoreRules() {
+  if (!confirm("Are you sure you want to delete ALL auto-ignore rules? This action cannot be undone.")) return;
+  try {
+    showToast("Purging all auto-ignore rules...", "info");
+    const res = await fetch("/api/rules/all", { method: "DELETE" });
+    const data = await res.json();
+    if (res.ok) {
+      showToast(data.message || "All auto-ignore rules purged successfully!", "success");
+      await loadAutoIgnoreRules();
+    } else {
+      showToast(data.detail || "Failed to purge auto-ignore rules.", "error");
+    }
+  } catch (err) {
+    showToast(`Error purging rules: ${err.message}`, "error");
+  }
+}
+
+async function purgeIgnoredCandidatesNow() {
+  if (!confirm("Are you sure you want to purge all candidates currently marked as IGNORED?")) return;
+  try {
+    showToast("Purging ignored task candidates...", "info");
+    const res = await fetch("/api/admin/danger/purge-ignored", { method: "POST" });
+    const data = await res.json();
+    if (res.ok) {
+      showToast(data.message || "Ignored candidates purged successfully!", "success");
+      if (typeof loadCandidates === "function") loadCandidates();
+    } else {
+      showToast(data.detail || "Failed to purge ignored candidates.", "error");
+    }
+  } catch (err) {
+    showToast(`Error purging ignored candidates: ${err.message}`, "error");
+  }
+}
+
+async function resetSettingsToDefaults() {
+  if (!confirm("Are you sure you want to reset all application settings to factory defaults?")) return;
+  try {
+    showToast("Resetting settings to factory defaults...", "info");
+    const res = await fetch("/api/admin/danger/reset-settings", { method: "POST" });
+    const data = await res.json();
+    if (res.ok) {
+      showToast(data.message || "Settings reset to defaults successfully!", "success");
+      await loadAdminSettings();
+    } else {
+      showToast(data.detail || "Failed to reset settings.", "error");
+    }
+  } catch (err) {
+    showToast(`Error resetting settings: ${err.message}`, "error");
+  }
+}
+
+
+
+
+

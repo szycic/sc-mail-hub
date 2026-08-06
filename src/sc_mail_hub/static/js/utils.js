@@ -2,7 +2,7 @@
  * UI Utilities & Formatting Helpers for SC Mail Hub.
  */
 
-function showToast(message, type = "info", persistent = false) {
+function showToast(message, type = "info", persistent = false, isHtml = false, duration = 4000) {
   const container = document.getElementById("toast-container");
   if (!container) return null;
 
@@ -13,10 +13,10 @@ function showToast(message, type = "info", persistent = false) {
   if (type === "error") iconHtml = `<span>❌</span>`;
   if (type === "loading") iconHtml = `<span class="toast-spin">⏳</span>`;
 
-  toast.innerHTML = `<span class="toast-icon-wrap">${iconHtml}</span> <span class="toast-text-msg">${message}</span>`;
+  toast.innerHTML = `<span class="toast-icon-wrap">${iconHtml}</span> <span class="toast-text-msg">${isHtml ? message : escapeHtml(message)}</span>`;
   container.appendChild(toast);
 
-  toast.update = function (newMessage, newType = type) {
+  toast.update = function (newMessage, newType = type, newIsHtml = isHtml) {
     let newIconHtml = `<span>ℹ️</span>`;
     if (newType === "success") newIconHtml = `<span>✅</span>`;
     if (newType === "error") newIconHtml = `<span>❌</span>`;
@@ -25,7 +25,10 @@ function showToast(message, type = "info", persistent = false) {
     const iconWrap = toast.querySelector(".toast-icon-wrap");
     const textMsg = toast.querySelector(".toast-text-msg");
     if (iconWrap) iconWrap.innerHTML = newIconHtml;
-    if (textMsg) textMsg.textContent = newMessage;
+    if (textMsg) {
+      if (newIsHtml) textMsg.innerHTML = newMessage;
+      else textMsg.textContent = newMessage;
+    }
   };
 
   toast.dismiss = function () {
@@ -38,7 +41,7 @@ function showToast(message, type = "info", persistent = false) {
   if (!persistent) {
     setTimeout(() => {
       toast.dismiss();
-    }, 4000);
+    }, duration);
   }
 
   return toast;
@@ -149,4 +152,23 @@ function formatDateForPicker(dateStr) {
   }
 
   return "";
+}
+
+function formatTimeAgo(dateInput) {
+  if (!dateInput) return "Never";
+  const date = new Date(dateInput);
+  if (isNaN(date.getTime())) return String(dateInput);
+
+  const seconds = Math.floor((new Date() - date) / 1000);
+  if (seconds < 5) return "just now";
+  if (seconds < 60) return `${seconds}s ago`;
+
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
 }

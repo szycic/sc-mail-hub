@@ -158,7 +158,10 @@ def _enqueue_ingest_event(loop: asyncio.AbstractEventLoop, job_id: str, event: d
 
 
 def _run_sample_ingest_job(job_id: str, loop: asyncio.AbstractEventLoop) -> None:
+    import time
+    start_time = time.time()
     db = SessionLocal()
+    total_emails = 0
     try:
         accounts = db.query(EmailAccount).all()
         if not accounts:
@@ -173,7 +176,6 @@ def _run_sample_ingest_job(job_id: str, loop: asyncio.AbstractEventLoop) -> None
             "message": f"Stage 1/2: Connecting to {len(accounts)} IMAP mailbox(es)..."
         })
 
-        total_emails = 0
         total_candidates = 0
 
         for idx, account in enumerate(accounts, start=1):
@@ -196,6 +198,9 @@ def _run_sample_ingest_job(job_id: str, loop: asyncio.AbstractEventLoop) -> None
                         "candidates_seeded": total_candidates
                     })
 
+        duration = time.time() - start_time
+        EmailService.update_sync_stats(db=db, duration=duration, fetched_count=total_emails, error=None)
+
         set_last_synced_at()
         notify_sync_completed()
 
@@ -206,6 +211,8 @@ def _run_sample_ingest_job(job_id: str, loop: asyncio.AbstractEventLoop) -> None
             "candidates_seeded": total_candidates
         })
     except Exception as err:
+        duration = time.time() - start_time
+        EmailService.update_sync_stats(db=db, duration=duration, fetched_count=total_emails, error=str(err))
         _enqueue_ingest_event(loop, job_id, {
             "status": "failed",
             "message": f"Sync failed: {str(err)}"

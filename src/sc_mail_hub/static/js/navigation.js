@@ -22,6 +22,10 @@ function switchTab(tabName, updateHistory = true) {
     if (target === "inbox" && typeof updateUrlParams === "function") {
       updateUrlParams();
     }
+    if (target === "admin") {
+      if (typeof loadAdminSettings === "function") loadAdminSettings();
+      if (typeof loadSyncHealthStats === "function") loadSyncHealthStats();
+    }
   }
 }
 

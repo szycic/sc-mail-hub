@@ -84,6 +84,14 @@ def update_rule(rule_id: int, payload: AutoIgnoreRuleUpdate, db: Session = Depen
     return rule
 
 
+@router.delete("/all")
+def delete_all_rules(db: Session = Depends(get_db)):
+    """Delete all auto-ignore rules."""
+    count = db.query(AutoIgnoreRule).delete()
+    db.commit()
+    return {"message": f"Successfully deleted all {count} auto-ignore rule(s).", "deleted_count": count}
+
+
 @router.delete("/{rule_id}")
 def delete_rule(rule_id: int, db: Session = Depends(get_db)):
     """Delete an auto-ignore rule."""
