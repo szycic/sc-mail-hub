@@ -64,3 +64,34 @@ def test_push_service_vapid_object_deserialization():
         assert len(pub_key) > 20
     finally:
         db.close()
+
+
+@pytest.mark.anyio
+async def test_notify_sync_completed_only_pushes_on_increase():
+    from unittest.mock import patch
+    from sc_mail_hub.api.inbox import notify_sync_completed_async, reset_last_pending_count
+
+    reset_last_pending_count(None)
+    with patch("sc_mail_hub.api.inbox.PushService.broadcast_push_notification") as mock_push, \
+         patch("sc_mail_hub.api.inbox.compute_inbox_stats") as mock_stats:
+
+        # 1. Baseline sync with 3 pending emails -> no push notification
+        mock_stats.return_value = {"counts": {"PENDING": 3}, "last_synced_at": "2026-08-06T00:00:00Z"}
+        await notify_sync_completed_async()
+        assert mock_push.call_count == 0
+
+        # 2. Subsequent sync with same count (3) -> no push notification
+        await notify_sync_completed_async()
+        assert mock_push.call_count == 0
+
+        # 3. Sync with decreased count (2) -> no push notification
+        mock_stats.return_value = {"counts": {"PENDING": 2}, "last_synced_at": "2026-08-06T00:05:00Z"}
+        await notify_sync_completed_async()
+        assert mock_push.call_count == 0
+
+        # 4. Sync with increased count (5) -> triggers push notification!
+        mock_stats.return_value = {"counts": {"PENDING": 5}, "last_synced_at": "2026-08-06T00:10:00Z"}
+        await notify_sync_completed_async()
+        assert mock_push.call_count == 1
+        assert mock_push.call_args[1]["body"] == "There are 5 pending emails"
+

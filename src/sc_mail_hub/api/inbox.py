@@ -24,6 +24,7 @@ from typing import Dict, List, Optional, Set
 router = APIRouter(prefix="/api/inbox", tags=["Inbox"])
 INGEST_JOB_QUEUES: Dict[str, asyncio.Queue] = {}
 LAST_SYNCED_AT: Optional[str] = None
+LAST_PENDING_COUNT: Optional[int] = None
 
 
 MAIN_EVENT_LOOP: Optional[asyncio.AbstractEventLoop] = None
@@ -65,6 +66,11 @@ def set_last_synced_at(dt_iso: Optional[str] = None) -> str:
         dt_iso = datetime.now(timezone.utc).isoformat()
     LAST_SYNCED_AT = dt_iso
     return LAST_SYNCED_AT
+
+
+def reset_last_pending_count(val: Optional[int] = None):
+    global LAST_PENDING_COUNT
+    LAST_PENDING_COUNT = val
 
 
 def compute_inbox_stats(db: Session) -> dict:
@@ -110,6 +116,7 @@ def compute_inbox_stats(db: Session) -> dict:
 
 
 async def notify_sync_completed_async():
+    global LAST_PENDING_COUNT
     set_last_synced_at()
     db = SessionLocal()
     try:
@@ -120,11 +127,12 @@ async def notify_sync_completed_async():
             "last_synced_at": stats["last_synced_at"]
         })
         pending = stats["counts"].get("PENDING", 0)
-        if pending > 0:
+        if LAST_PENDING_COUNT is not None and pending > LAST_PENDING_COUNT and pending > 0:
             verb = "is" if pending == 1 else "are"
             noun = "email" if pending == 1 else "emails"
             msg = f"There {verb} {pending} pending {noun}"
             PushService.broadcast_push_notification(db, title="Mail Hub", body=msg, url="/inbox")
+        LAST_PENDING_COUNT = pending
     except Exception:
         pass
     finally:
