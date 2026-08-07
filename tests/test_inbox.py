@@ -156,6 +156,43 @@ def test_service_worker_endpoint():
     assert "Service Worker" in res.text
 
 
+def test_fetch_from_imap_uses_body_peek():
+    from unittest.mock import MagicMock, patch
+    from sc_mail_hub.services.email_service import EmailService
+    from sc_mail_hub.models import EmailAccount
+    from conftest import TestingSessionLocal as SessionLocal
+
+    mock_mail = MagicMock()
+    mock_mail.select.return_value = ("OK", [b"1"])
+    mock_mail.uid.side_effect = [
+        ("OK", [b"101"]),  # search UIDs
+        ("OK", [(b'101 (UID 101)', b'From: test@example.com\r\nSubject: Test\r\n\r\nHello')])  # fetch result
+    ]
+
+    with patch("imaplib.IMAP4_SSL", return_value=mock_mail):
+        db = SessionLocal()
+        try:
+            account = EmailAccount(
+                name="Test IMAP Account",
+                provider="generic",
+                email_address="peek_test@example.com",
+                credentials_json='{"host": "imap.example.com", "port": 993, "username": "peek_test", "password": "pass"}'
+            )
+            db.add(account)
+            db.commit()
+
+            EmailService.fetch_from_imap(account, db)
+
+            # Verify that mail.uid("fetch", ...) was called with "(BODY.PEEK[])"
+            fetch_calls = [call for call in mock_mail.uid.call_args_list if call[0][0] == "fetch"]
+            assert len(fetch_calls) == 1
+            assert fetch_calls[0][0][2] == "(BODY.PEEK[])"
+        finally:
+            db.close()
+
+
+
+
 
 
 

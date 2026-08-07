@@ -249,7 +249,7 @@ class EmailService:
                 if uid_strs:
                     uid_sequence = ",".join(uid_strs)
                     logger.info(f"📦 [IMAP] Batch fetching {len(uid_strs)} message(s) (UIDs: {uid_sequence})...")
-                    res, msg_data = mail.uid("fetch", uid_sequence, "(RFC822)")
+                    res, msg_data = mail.uid("fetch", uid_sequence, "(BODY.PEEK[])")
                     if res == "OK" and msg_data:
                         for response_part in msg_data:
                             if isinstance(response_part, tuple):
