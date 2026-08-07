@@ -256,6 +256,53 @@ def test_delete_account_delete_emails():
     db.close()
 
 
+def test_reconnect_account_reassociates_account_id():
+    from conftest import TestingSessionLocal as SessionLocal
+    from sc_mail_hub.models import EmailAccount, EmailMessage
+
+    db = SessionLocal()
+    # Step 1: Create an orphan message with account_email set but account_id = None
+    msg = EmailMessage(
+        account_id=None,
+        account_email="reconnect_test@example.com",
+        sender="sender@test.com",
+        subject="Reassociate Test",
+        body_text="Body"
+    )
+    db.add(msg)
+    db.commit()
+    msg_id = msg.id
+
+    try:
+        # Step 2: Re-connect an email account with the matching email_address
+        res = client.post("/api/accounts", json={
+            "name": "Reconnected Account",
+            "provider": "generic",
+            "email_address": "reconnect_test@example.com",
+            "auth_type": "imap",
+            "credentials_json": "{}"
+        })
+        assert res.status_code == 200
+        new_acc_id = res.json()["id"]
+
+        # Step 3: Verify the unlinked message's account_id was reassociated to new_acc_id
+        db.expire_all()
+        reassociated_msg = db.query(EmailMessage).filter(EmailMessage.id == msg_id).first()
+        assert reassociated_msg is not None
+        assert reassociated_msg.account_id == new_acc_id
+
+        # Clean up created account and test message
+        acc = db.query(EmailAccount).filter(EmailAccount.id == new_acc_id).first()
+        if acc:
+            acc.emails = []
+            db.delete(acc)
+            db.commit()
+    finally:
+        db.query(EmailMessage).filter(EmailMessage.id == msg_id).delete(synchronize_session=False)
+        db.commit()
+        db.close()
+
+
 
 
 

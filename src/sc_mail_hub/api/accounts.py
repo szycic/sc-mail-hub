@@ -58,6 +58,12 @@ def create_account(payload: EmailAccountCreate, db: Session = Depends(get_db)):
     db.add(acc)
     db.commit()
     db.refresh(acc)
+    
+    db.query(EmailMessage).filter(
+        (EmailMessage.account_email == acc.email_address) & (EmailMessage.account_id.is_(None))
+    ).update({EmailMessage.account_id: acc.id}, synchronize_session=False)
+    db.commit()
+
     return acc
 
 @router.delete("/{account_id}")
