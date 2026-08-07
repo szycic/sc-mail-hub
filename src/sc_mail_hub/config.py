@@ -1,7 +1,7 @@
 """Application Configuration Module for SC Mail Hub.
 
 Loads environment variables from .env file or applies defaults for database settings,
-IMAP synchronization intervals, server host/port, secret keys, and default API credentials.
+IMAP synchronization intervals, server host/port, and default API credentials.
 """
 
 import os
@@ -18,10 +18,8 @@ class Settings:
     DB_URL: str = os.getenv("DB_URL", f"sqlite:///{DB_PATH}")
     HOST: str = os.getenv("HOST", "0.0.0.0")
     PORT: int = int(os.getenv("PORT", "8000"))
-    IMAP_INITIAL_LOOKBACK_DAYS: int = int(os.getenv("IMAP_INITIAL_LOOKBACK_DAYS", "1"))
     IMAP_MAX_FETCH_PER_SYNC: int = int(os.getenv("IMAP_MAX_FETCH_PER_SYNC", "15"))
     IMAP_SOCKET_TIMEOUT_SECONDS: int = int(os.getenv("IMAP_SOCKET_TIMEOUT_SECONDS", "8"))
-    SECRET_KEY: str = os.getenv("SECRET_KEY", "super-secret-dev-key-change-in-production")
     BASE_URL: str = os.getenv("BASE_URL", "http://localhost:8001")
     
     # Default Notion credentials (if set in .env)
