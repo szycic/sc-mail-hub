@@ -177,8 +177,8 @@ function applyInboxStatsData(counts, lastSyncedAt, isSyncing = false) {
       const badgeEl = document.getElementById(`badge-${st}`);
       if (badgeEl) {
         const val = counts[st] !== undefined ? counts[st] : 0;
-        badgeEl.textContent = val > 99 ? "99+" : val;
-        if (val > 99) {
+        badgeEl.textContent = val > 999 ? "999+" : val;
+        if (val > 999) {
           badgeEl.title = `${val} items`;
         } else {
           badgeEl.removeAttribute("title");
