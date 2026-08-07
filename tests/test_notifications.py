@@ -95,3 +95,49 @@ async def test_notify_sync_completed_only_pushes_on_increase():
         assert mock_push.call_count == 1
         assert mock_push.call_args[1]["body"] == "There are 5 pending emails"
 
+
+@pytest.mark.anyio
+async def test_sync_suppresses_intermediate_notifications():
+    from unittest.mock import patch
+    from sc_mail_hub.api.inbox import (
+        start_sync,
+        finish_sync_async,
+        notify_sync_completed_async,
+        reset_last_pending_count,
+        is_sync_in_progress,
+    )
+
+    reset_last_pending_count(None)
+    with patch("sc_mail_hub.api.inbox.PushService.broadcast_push_notification") as mock_push, \
+         patch("sc_mail_hub.api.inbox.compute_inbox_stats") as mock_stats:
+
+        # 1. Initial state before sync: 5 pending emails
+        mock_stats.return_value = {"counts": {"PENDING": 5}, "last_synced_at": "2026-08-06T00:00:00Z"}
+        start_sync()
+        assert is_sync_in_progress() is True
+
+        # 2. Intermediate updates as sync progresses (5 -> 9 -> 10 -> 15 -> 21)
+        mock_stats.return_value = {"counts": {"PENDING": 9}, "last_synced_at": "2026-08-06T00:01:00Z"}
+        await notify_sync_completed_async(is_intermediate=True)
+
+        mock_stats.return_value = {"counts": {"PENDING": 10}, "last_synced_at": "2026-08-06T00:02:00Z"}
+        await notify_sync_completed_async(is_intermediate=True)
+
+        mock_stats.return_value = {"counts": {"PENDING": 15}, "last_synced_at": "2026-08-06T00:03:00Z"}
+        await notify_sync_completed_async(is_intermediate=True)
+
+        mock_stats.return_value = {"counts": {"PENDING": 21}, "last_synced_at": "2026-08-06T00:04:00Z"}
+        await notify_sync_completed_async(is_intermediate=True)
+
+        # Zero notifications should have been sent during sync progress!
+        assert mock_push.call_count == 0
+
+        # 3. Sync completes
+        await finish_sync_async()
+        assert is_sync_in_progress() is False
+
+        # EXACTLY ONE notification dispatched upon sync completion!
+        assert mock_push.call_count == 1
+        assert mock_push.call_args[1]["body"] == "There are 21 pending emails"
+
+

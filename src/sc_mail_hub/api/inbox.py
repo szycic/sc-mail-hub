@@ -25,6 +25,8 @@ router = APIRouter(prefix="/api/inbox", tags=["Inbox"])
 INGEST_JOB_QUEUES: Dict[str, asyncio.Queue] = {}
 LAST_SYNCED_AT: Optional[str] = None
 LAST_PENDING_COUNT: Optional[int] = None
+IS_SYNCING: bool = False
+SYNC_START_PENDING_COUNT: Optional[int] = None
 
 
 MAIN_EVENT_LOOP: Optional[asyncio.AbstractEventLoop] = None
@@ -69,12 +71,81 @@ def set_last_synced_at(dt_iso: Optional[str] = None) -> str:
 
 
 def reset_last_pending_count(val: Optional[int] = None):
-    global LAST_PENDING_COUNT
+    global LAST_PENDING_COUNT, SYNC_START_PENDING_COUNT, IS_SYNCING
     LAST_PENDING_COUNT = val
+    SYNC_START_PENDING_COUNT = None
+    IS_SYNCING = False
+
+
+def is_sync_in_progress() -> bool:
+    global IS_SYNCING
+    return IS_SYNCING
+
+
+def start_sync(db: Optional[Session] = None):
+    global IS_SYNCING, SYNC_START_PENDING_COUNT
+    IS_SYNCING = True
+    close_db = False
+    if db is None:
+        db = SessionLocal()
+        close_db = True
+    try:
+        if SYNC_START_PENDING_COUNT is None:
+            stats = compute_inbox_stats(db)
+            SYNC_START_PENDING_COUNT = stats["counts"].get("PENDING", 0)
+    finally:
+        if close_db:
+            db.close()
+
+
+async def finish_sync_async():
+    global IS_SYNCING, SYNC_START_PENDING_COUNT, LAST_PENDING_COUNT
+    IS_SYNCING = False
+    set_last_synced_at()
+    db = SessionLocal()
+    try:
+        stats = compute_inbox_stats(db)
+        pending = stats["counts"].get("PENDING", 0)
+        await sync_ws_manager.broadcast({
+            "event": "sync_completed",
+            "stats": stats["counts"],
+            "last_synced_at": stats["last_synced_at"],
+            "is_syncing": False
+        })
+        baseline = SYNC_START_PENDING_COUNT if SYNC_START_PENDING_COUNT is not None else LAST_PENDING_COUNT
+        SYNC_START_PENDING_COUNT = None
+
+        if baseline is not None and pending > baseline and pending > 0:
+            verb = "is" if pending == 1 else "are"
+            noun = "email" if pending == 1 else "emails"
+            msg = f"There {verb} {pending} pending {noun}"
+            PushService.broadcast_push_notification(db, title="Mail Hub", body=msg, url="/inbox")
+
+        LAST_PENDING_COUNT = pending
+    except Exception:
+        pass
+    finally:
+        db.close()
+
+
+def finish_sync():
+    global MAIN_EVENT_LOOP
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(finish_sync_async())
+    except RuntimeError:
+        target_loop = MAIN_EVENT_LOOP
+        if not target_loop or target_loop.is_closed():
+            try:
+                target_loop = asyncio.get_event_loop()
+            except RuntimeError:
+                target_loop = None
+        if target_loop and target_loop.is_running():
+            asyncio.run_coroutine_threadsafe(finish_sync_async(), target_loop)
 
 
 def compute_inbox_stats(db: Session) -> dict:
-    global LAST_SYNCED_AT
+    global LAST_SYNCED_AT, IS_SYNCING
     from sqlalchemy import func
     counts_raw = db.query(TaskCandidate.status, func.count(TaskCandidate.id)).group_by(TaskCandidate.status).all()
     status_counts = {status: count for status, count in counts_raw}
@@ -111,28 +182,31 @@ def compute_inbox_stats(db: Session) -> dict:
             "IGNORED": ignored,
             "ALL": total
         },
-        "last_synced_at": last_synced
+        "last_synced_at": last_synced,
+        "is_syncing": IS_SYNCING
     }
 
 
-async def notify_sync_completed_async():
-    global LAST_PENDING_COUNT
+async def notify_sync_completed_async(is_intermediate: bool = False):
+    global LAST_PENDING_COUNT, IS_SYNCING
     set_last_synced_at()
     db = SessionLocal()
     try:
         stats = compute_inbox_stats(db)
         await sync_ws_manager.broadcast({
-            "event": "sync_completed",
+            "event": "sync_completed" if not IS_SYNCING else "sync_progress",
             "stats": stats["counts"],
-            "last_synced_at": stats["last_synced_at"]
+            "last_synced_at": stats["last_synced_at"],
+            "is_syncing": IS_SYNCING
         })
         pending = stats["counts"].get("PENDING", 0)
-        if LAST_PENDING_COUNT is not None and pending > LAST_PENDING_COUNT and pending > 0:
-            verb = "is" if pending == 1 else "are"
-            noun = "email" if pending == 1 else "emails"
-            msg = f"There {verb} {pending} pending {noun}"
-            PushService.broadcast_push_notification(db, title="Mail Hub", body=msg, url="/inbox")
-        LAST_PENDING_COUNT = pending
+        if not IS_SYNCING and not is_intermediate:
+            if LAST_PENDING_COUNT is not None and pending > LAST_PENDING_COUNT and pending > 0:
+                verb = "is" if pending == 1 else "are"
+                noun = "email" if pending == 1 else "emails"
+                msg = f"There {verb} {pending} pending {noun}"
+                PushService.broadcast_push_notification(db, title="Mail Hub", body=msg, url="/inbox")
+            LAST_PENDING_COUNT = pending
     except Exception:
         pass
     finally:
@@ -170,6 +244,7 @@ def _run_sample_ingest_job(job_id: str, loop: asyncio.AbstractEventLoop) -> None
     start_time = time.time()
     db = SessionLocal()
     total_emails = 0
+    start_sync(db)
     try:
         accounts = db.query(EmailAccount).all()
         if not accounts:
@@ -177,6 +252,7 @@ def _run_sample_ingest_job(job_id: str, loop: asyncio.AbstractEventLoop) -> None
                 "status": "failed",
                 "message": "No connected email accounts found. Please add an email account in Connected Accounts tab first."
             })
+            finish_sync()
             return
 
         _enqueue_ingest_event(loop, job_id, {
@@ -205,12 +281,13 @@ def _run_sample_ingest_job(job_id: str, loop: asyncio.AbstractEventLoop) -> None
                         "emails_synced": total_emails,
                         "candidates_seeded": total_candidates
                     })
+                    notify_sync_completed()
 
         duration = time.time() - start_time
         EmailService.update_sync_stats(db=db, duration=duration, fetched_count=total_emails, error=None)
 
         set_last_synced_at()
-        notify_sync_completed()
+        finish_sync()
 
         _enqueue_ingest_event(loop, job_id, {
             "status": "completed",
@@ -221,6 +298,7 @@ def _run_sample_ingest_job(job_id: str, loop: asyncio.AbstractEventLoop) -> None
     except Exception as err:
         duration = time.time() - start_time
         EmailService.update_sync_stats(db=db, duration=duration, fetched_count=total_emails, error=str(err))
+        finish_sync()
         _enqueue_ingest_event(loop, job_id, {
             "status": "failed",
             "message": f"Sync failed: {str(err)}"

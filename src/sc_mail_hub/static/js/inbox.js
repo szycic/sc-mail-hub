@@ -171,7 +171,7 @@ function updateBulkActionUI() {
 let syncUpdatesWs = null;
 let syncUpdatesReconnectTimer = null;
 
-function applyInboxStatsData(counts, lastSyncedAt) {
+function applyInboxStatsData(counts, lastSyncedAt, isSyncing = false) {
   if (counts) {
     ["PENDING", "AI_PROCESSED", "CREATED", "IGNORED", "ALL"].forEach(st => {
       const badgeEl = document.getElementById(`badge-${st}`);
@@ -195,7 +195,7 @@ function applyInboxStatsData(counts, lastSyncedAt) {
     }
 
     if (typeof handlePendingNotifications === "function") {
-      handlePendingNotifications(pendingCount);
+      handlePendingNotifications(pendingCount, isSyncing);
     }
   }
 
@@ -210,7 +210,7 @@ async function loadInboxStats() {
     const res = await fetch("/api/inbox/stats");
     if (!res.ok) return;
     const data = await res.json();
-    applyInboxStatsData(data.counts, data.last_synced_at);
+    applyInboxStatsData(data.counts, data.last_synced_at, !!data.is_syncing);
   } catch (err) {
     console.error("Failed to load inbox stats:", err);
   }
@@ -227,8 +227,8 @@ function initSyncUpdatesWebSocket() {
     syncUpdatesWs.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        if (data.event === "initial_stats" || data.event === "sync_completed") {
-          applyInboxStatsData(data.stats, data.last_synced_at);
+        if (data.event === "initial_stats" || data.event === "sync_completed" || data.event === "sync_progress") {
+          applyInboxStatsData(data.stats, data.last_synced_at, !!data.is_syncing);
           if (data.event === "sync_completed" && typeof loadCandidates === "function") {
             loadCandidates();
           }

@@ -134,6 +134,10 @@ function initNotifications() {
   }
 }
 
+let previousPendingCount = null;
+let syncBaselinePendingCount = null;
+let isSyncingState = false;
+
 /**
  * Formats the notification text according to the pending count:
  * - 1: "There is 1 pending email"
@@ -152,19 +156,48 @@ function formatPendingNotificationMessage(count) {
 /**
  * Triggered whenever pending count is updated.
  * Sends a notification when pending count increases and is non-zero (count > 0).
+ * Suppresses intermediate notifications while sync is in progress.
  *
  * @param {number} pendingCount
+ * @param {boolean} isSyncing
  */
-function handlePendingNotifications(pendingCount) {
+function handlePendingNotifications(pendingCount, isSyncing = false) {
   const count = parseInt(pendingCount, 10) || 0;
 
-  // Update App Icon Badge if supported
+  // Update App Icon Badge if supported (updates dynamically during sync)
   if ("setAppBadge" in navigator) {
     if (count > 0) {
       navigator.setAppBadge(count).catch(() => {});
     } else if ("clearAppBadge" in navigator) {
       navigator.clearAppBadge().catch(() => {});
     }
+  }
+
+  // Handle active sync in progress
+  if (isSyncing) {
+    if (!isSyncingState) {
+      isSyncingState = true;
+      syncBaselinePendingCount = previousPendingCount !== null ? previousPendingCount : count;
+    }
+    if (syncBaselinePendingCount === null) {
+      syncBaselinePendingCount = count;
+    }
+    previousPendingCount = count;
+    // Suppress pop-up desktop notifications while sync is in progress
+    return;
+  }
+
+  // Handle transition when sync finishes
+  if (isSyncingState) {
+    isSyncingState = false;
+    const baseline = syncBaselinePendingCount !== null ? syncBaselinePendingCount : previousPendingCount;
+    syncBaselinePendingCount = null;
+
+    if (baseline !== null && count > baseline && count > 0) {
+      dispatchDesktopNotification(count);
+    }
+    previousPendingCount = count;
+    return;
   }
 
   if (previousPendingCount === null) {
@@ -175,28 +208,32 @@ function handlePendingNotifications(pendingCount) {
 
   // Check if count increased and is non-zero
   if (count > previousPendingCount && count > 0) {
-    const message = formatPendingNotificationMessage(count);
-    const title = "Mail Hub";
-
-    // Desktop Browser Notification (when open)
-    if ("Notification" in window && Notification.permission === "granted") {
-      const options = {
-        body: message,
-        icon: "/static/assets/favicon-32x32.png",
-        badge: "/static/assets/favicon-16x16.png",
-        tag: "pending-emails-notification",
-        renotify: true
-      };
-
-      if (swRegistration && swRegistration.showNotification) {
-        swRegistration.showNotification(title, options);
-      } else {
-        new Notification(title, options);
-      }
-    }
+    dispatchDesktopNotification(count);
   }
 
   previousPendingCount = count;
+}
+
+function dispatchDesktopNotification(count) {
+  const message = formatPendingNotificationMessage(count);
+  const title = "Mail Hub";
+
+  // Desktop Browser Notification (when open)
+  if ("Notification" in window && Notification.permission === "granted") {
+    const options = {
+      body: message,
+      icon: "/static/assets/favicon-32x32.png",
+      badge: "/static/assets/favicon-16x16.png",
+      tag: "pending-emails-notification",
+      renotify: true
+    };
+
+    if (swRegistration && swRegistration.showNotification) {
+      swRegistration.showNotification(title, options);
+    } else {
+      new Notification(title, options);
+    }
+  }
 }
 
 // Auto-initialize on DOM load

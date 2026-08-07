@@ -207,11 +207,14 @@ async def background_email_sync_loop():
             finally:
                 db.close()
 
-            # Offload blocking IMAP network socket I/O to a worker thread so HTTP routes remain instant
-            synced = await asyncio.to_thread(_run_email_sync)
-            if synced:
-                inbox.set_last_synced_at()
-                await inbox.notify_sync_completed_async()
+            # Mark sync as started to suppress intermediate notifications
+            inbox.start_sync()
+            try:
+                synced = await asyncio.to_thread(_run_email_sync)
+                if synced:
+                    inbox.set_last_synced_at()
+            finally:
+                await inbox.finish_sync_async()
 
             sync_trigger_event.clear()
             try:
@@ -222,6 +225,7 @@ async def background_email_sync_loop():
             break
         except Exception as e:
             logger.error(f"Background loop error: {e}")
+            await inbox.finish_sync_async()
             await asyncio.sleep(10)
 
 
