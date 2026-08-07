@@ -6,7 +6,6 @@
  * native app icon badging, and notification dispatching.
  */
 
-let previousPendingCount = null;
 let swRegistration = null;
 
 /**
@@ -109,7 +108,7 @@ function initNotifications() {
       .catch(() => navigator.serviceWorker.register("/static/js/sw.js"))
       .then((reg) => {
         swRegistration = reg;
-        reg.update().catch(() => {});
+        reg.update().catch(() => { });
         if (Notification.permission === "granted") {
           subscribeUserToPush(reg);
         }
@@ -128,7 +127,7 @@ function initNotifications() {
             subscribeUserToPush(swRegistration);
           }
         })
-        .catch(() => {});
+        .catch(() => { });
     };
     document.addEventListener("click", requestPerm, { once: true });
   }
@@ -167,9 +166,9 @@ function handlePendingNotifications(pendingCount, isSyncing = false) {
   // Update App Icon Badge if supported (updates dynamically during sync)
   if ("setAppBadge" in navigator) {
     if (count > 0) {
-      navigator.setAppBadge(count).catch(() => {});
+      navigator.setAppBadge(count).catch(() => { });
     } else if ("clearAppBadge" in navigator) {
-      navigator.clearAppBadge().catch(() => {});
+      navigator.clearAppBadge().catch(() => { });
     }
   }
 
