@@ -288,7 +288,7 @@ def root_redirect():
 @app.get("/admin")
 def index_page(request: Request):
     """Serve single-page app index HTML template."""
-    return templates.TemplateResponse(request=request, name="index.html")
+    return templates.TemplateResponse(request=request, name="index.html", context={"app_version": settings.VERSION})
 
 
 if __name__ == "__main__":
