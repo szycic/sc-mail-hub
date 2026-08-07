@@ -6,6 +6,7 @@ and ReportLab A4 PDF generation with full Polish UTF-8 character support.
 
 import imaplib
 import email
+import email.utils
 import json
 import re
 import os
@@ -50,7 +51,7 @@ SAMPLE_EMAILS = [
 ]
 
 class EmailService:
-    _last_sync_stats = {
+    _last_sync_stats: Dict[str, Any] = {
         "last_sync_duration_seconds": 0.0,
         "last_synced_at": None,
         "last_error": None,
@@ -67,16 +68,16 @@ class EmailService:
             cls._last_sync_stats["last_reset_day"] = today_str
             cls._last_sync_stats["cumulative_fetched_today"] = 0
 
-        dur = round(float(duration), 2)
+        dur = round(duration, 2)
         if dur <= 0.0:
             dur = 0.05
         cls._last_sync_stats["last_sync_duration_seconds"] = dur
         cls._last_sync_stats["last_synced_at"] = datetime.now(timezone.utc).isoformat()
-        cls._last_sync_stats["last_fetched_count"] = int(fetched_count)
-        cls._last_sync_stats["cumulative_fetched_today"] += int(fetched_count)
+        cls._last_sync_stats["last_fetched_count"] = fetched_count
+        cls._last_sync_stats["cumulative_fetched_today"] += fetched_count
 
         if error:
-            cls._last_sync_stats["last_error"] = str(error)
+            cls._last_sync_stats["last_error"] = error
         else:
             cls._last_sync_stats["last_error"] = None
 
@@ -86,9 +87,9 @@ class EmailService:
                 sys_set = get_or_create_system_settings(db)
                 if sys_set.daily_ingested_date != today_str:
                     sys_set.daily_ingested_date = today_str
-                    sys_set.daily_ingested_count = int(fetched_count)
+                    sys_set.daily_ingested_count = fetched_count
                 else:
-                    sys_set.daily_ingested_count = (sys_set.daily_ingested_count or 0) + int(fetched_count)
+                    sys_set.daily_ingested_count = (sys_set.daily_ingested_count or 0) + fetched_count
                 db.commit()
             except Exception:
                 pass
@@ -145,7 +146,7 @@ class EmailService:
         except Exception as err:
             return {"success": False, "error": f"IMAP Connection Failed: {str(err)}"}
     @staticmethod
-    def generate_sample_emails(db: Session, account_id: int = None) -> List[EmailMessage]:
+    def generate_sample_emails(db: Session, account_id: Optional[int] = None) -> List[EmailMessage]:
         """Inject sample emails into the database for demonstration and testing."""
         created_messages = []
         ts = int(datetime.now(timezone.utc).timestamp())
@@ -217,7 +218,7 @@ class EmailService:
                 last_uid_int = int(account.last_uid)
                 search_clause = f"UID {last_uid_int + 1}:*"
                 logger.info(f"🔍 [IMAP] Searching incremental emails with clause: '{search_clause}'")
-                status, response = mail.uid("search", None, search_clause)
+                status, response = mail.uid("search", search_clause)
                 if status != "OK":
                     logger.error(f"❌ [IMAP] Search failed for clause '{search_clause}'")
                     mail.logout()
@@ -227,7 +228,7 @@ class EmailService:
                 uid_tokens = [t for t in raw_tokens if t.decode("utf-8", errors="ignore").isdigit() and int(t.decode("utf-8", errors="ignore")) > last_uid_int]
             else:
                 logger.info(f"🔍 [IMAP] Initial fetch: searching ALL messages...")
-                status, response = mail.uid("search", None, "ALL")
+                status, response = mail.uid("search", "ALL")
                 if status != "OK":
                     logger.error(f"❌ [IMAP] Initial search ALL failed")
                     mail.logout()
@@ -271,13 +272,17 @@ class EmailService:
                                         content_disposition = str(part.get("Content-Disposition"))
                                         if content_type == "text/plain" and "attachment" not in content_disposition:
                                             payload = part.get_payload(decode=True)
-                                            if payload:
+                                            if isinstance(payload, bytes):
                                                 body = payload.decode(part.get_content_charset() or "utf-8", errors="replace")
+                                            elif isinstance(payload, str):
+                                                body = payload
                                             break
                                 else:
                                     payload = msg.get_payload(decode=True)
-                                    if payload:
+                                    if isinstance(payload, bytes):
                                         body = payload.decode(msg.get_content_charset() or "utf-8", errors="replace")
+                                    elif isinstance(payload, str):
+                                        body = payload
 
                                 date_header = msg.get("Date")
                                 received_dt = None
@@ -293,6 +298,7 @@ class EmailService:
                                 if not existing:
                                     email_record = EmailMessage(
                                         account_id=account.id,
+                                        account_email=account.email_address,
                                         email_uid=extracted_uid or max_seen_uid,
                                         message_id=msg_id,
                                         sender=sender,
@@ -434,9 +440,10 @@ class EmailService:
             )
             styles = getSampleStyleSheet()
 
-            title_style = ParagraphStyle('EmailTitle', parent=styles['Heading1'], fontName=pdf_font_name, fontSize=16, leading=20, textColor='#1e293b')
-            meta_style = ParagraphStyle('EmailMeta', parent=styles['Normal'], fontName=pdf_font_name, fontSize=10, leading=14, textColor='#64748b')
-            body_style = ParagraphStyle('EmailBody', parent=styles['Normal'], fontName=pdf_font_name, fontSize=11, leading=16, textColor='#0f172a')
+            from reportlab.lib.colors import HexColor
+            title_style = ParagraphStyle('EmailTitle', parent=styles['Heading1'], fontName=pdf_font_name, fontSize=16, leading=20, textColor=HexColor('#1e293b'))
+            meta_style = ParagraphStyle('EmailMeta', parent=styles['Normal'], fontName=pdf_font_name, fontSize=10, leading=14, textColor=HexColor('#64748b'))
+            body_style = ParagraphStyle('EmailBody', parent=styles['Normal'], fontName=pdf_font_name, fontSize=11, leading=16, textColor=HexColor('#0f172a'))
 
             story = []
             story.append(Paragraph(f"<b>Subject:</b> {subject_text}", title_style))

@@ -292,3 +292,36 @@ def test_get_sync_chart_data():
     assert isinstance(data["series"], list)
 
 
+def test_sync_chart_data_retains_removed_account_email():
+    """Verify that 7-day chart preserves account email for unlinked emails from removed accounts."""
+    from conftest import TestingSessionLocal as SessionLocal
+    from sc_mail_hub.models import EmailMessage
+    from datetime import datetime, timezone
+
+    db = SessionLocal()
+    msg = EmailMessage(
+        account_id=None,
+        account_email="unlinked_chart_test@example.com",
+        sender="sender@example.com",
+        subject="Chart Test",
+        body_text="Body",
+        received_at=datetime.now(timezone.utc)
+    )
+    db.add(msg)
+    db.commit()
+
+    try:
+        response = client.get("/api/admin/sync-chart-data")
+        assert response.status_code == 200
+        data = response.json()
+
+        removed_series = [s for s in data["series"] if "unlinked_chart_test@example.com" in s["account_name"]]
+        assert len(removed_series) == 1
+        assert "(Disconnected)" in removed_series[0]["account_name"]
+        assert sum(removed_series[0]["counts"]) >= 1
+    finally:
+        db.delete(msg)
+        db.commit()
+        db.close()
+
+

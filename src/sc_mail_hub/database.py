@@ -65,6 +65,7 @@ def init_db():
             "ALTER TABLE email_accounts ADD COLUMN last_uid INTEGER",
             "ALTER TABLE email_accounts ADD COLUMN uid_validity VARCHAR(64)",
             "ALTER TABLE email_messages ADD COLUMN email_uid INTEGER",
+            "ALTER TABLE email_messages ADD COLUMN account_email VARCHAR(255)",
             "ALTER TABLE task_candidates ADD COLUMN auto_ignored_reason VARCHAR(255)",
             "ALTER TABLE system_settings ADD COLUMN vapid_private_key TEXT",
             "ALTER TABLE system_settings ADD COLUMN vapid_public_key TEXT",
@@ -78,6 +79,16 @@ def init_db():
                 conn.commit()
             except Exception:
                 pass
+
+        try:
+            conn.execute(text(
+                "UPDATE email_messages "
+                "SET account_email = (SELECT email_address FROM email_accounts WHERE email_accounts.id = email_messages.account_id) "
+                "WHERE account_email IS NULL AND account_id IS NOT NULL"
+            ))
+            conn.commit()
+        except Exception:
+            pass
 
 
 def get_db():

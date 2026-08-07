@@ -4,6 +4,7 @@ Provides endpoints to view and update system-wide administrative settings such a
 auto-refresh toggles and background email sync polling intervals.
 """
 
+from typing import Any, Dict
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
@@ -99,43 +100,48 @@ def get_sync_chart_data(db: Session = Depends(get_db)):
     day_labels = [d.strftime("%b %d") for d in days]
     day_iso_strs = [d.strftime("%Y-%m-%d") for d in days]
 
-    accounts = db.query(EmailAccount).all()
-    account_map = {acc.id: acc.email_address for acc in accounts}
+    active_accounts = db.query(EmailAccount).all()
+    active_emails = {acc.email_address: acc.name for acc in active_accounts}
 
     start_dt = datetime.combine(days[0], datetime.min.time(), tzinfo=timezone.utc)
-    messages = db.query(EmailMessage.account_id, EmailMessage.received_at).filter(
+    messages = db.query(EmailMessage.account_email, EmailMessage.received_at).filter(
         EmailMessage.received_at >= start_dt
     ).all()
 
-    account_data = {}
-    for acc in accounts:
-        account_data[acc.id] = {d_str: 0 for d_str in day_iso_strs}
+    account_data: Dict[str, Dict[str, int]] = {}
+    account_map: Dict[str, str] = {}
 
-    account_data[0] = {d_str: 0 for d_str in day_iso_strs}
-    account_map[0] = "Default / System"
+    for email_addr, name in active_emails.items():
+        account_data[email_addr] = {d_str: 0 for d_str in day_iso_strs}
+        account_map[email_addr] = f"{name} ({email_addr})" if (name and name != email_addr) else email_addr
 
-    for acc_id, r_at in messages:
+    for acc_email, r_at in messages:
         if not r_at:
             continue
         d_str = r_at.strftime("%Y-%m-%d")
         if d_str in day_iso_strs:
-            target_acc = acc_id if (acc_id and acc_id in account_map) else 0
-            if target_acc not in account_data:
-                account_data[target_acc] = {ds: 0 for ds in day_iso_strs}
-            account_data[target_acc][d_str] = account_data[target_acc].get(d_str, 0) + 1
+            target_key = acc_email if acc_email else "System"
+            if target_key not in account_data:
+                account_data[target_key] = {ds: 0 for ds in day_iso_strs}
+                if target_key == "System":
+                    account_map["System"] = "System"
+                else:
+                    account_map[target_key] = f"{target_key} (Disconnected)"
+
+            account_data[target_key][d_str] = account_data[target_key].get(d_str, 0) + 1
 
     series = []
     colors = ["#60a5fa", "#34d399", "#a78bfa", "#fbbf24", "#f472b6", "#38bdf8"]
 
-    active_keys = [k for k in account_data if sum(account_data[k].values()) > 0 or k in account_map]
-    if 0 in active_keys and sum(account_data[0].values()) == 0 and len(active_keys) > 1:
-        active_keys.remove(0)
+    active_keys = [k for k in account_data if sum(account_data[k].values()) > 0 or k in active_emails]
+    if "System" in active_keys and sum(account_data["System"].values()) == 0 and len(active_keys) > 1:
+        active_keys.remove("System")
 
     for idx, acc_key in enumerate(active_keys):
         counts = [account_data[acc_key][d_str] for d_str in day_iso_strs]
         series.append({
             "account_id": acc_key,
-            "account_name": account_map.get(acc_key, f"Account #{acc_key}"),
+            "account_name": account_map.get(acc_key, acc_key),
             "color": colors[idx % len(colors)],
             "counts": counts
         })
@@ -180,7 +186,7 @@ def run_system_diagnostics(db: Session = Depends(get_db)):
         passed_accounts = []
         failed_accounts = []
         for acc in active_accounts:
-            res = EmailService.test_imap_connection(acc.credentials_json)
+            res = EmailService.test_imap_connection(str(acc.credentials_json or ""))
             if res.get("success"):
                 passed_accounts.append(acc.email_address)
             else:
@@ -215,7 +221,7 @@ def run_system_diagnostics(db: Session = Depends(get_db)):
         )
         has_warning = True
     else:
-        notion_res = NotionService.fetch_database_schema(notion_cfg.api_token, notion_cfg.database_id)
+        notion_res = NotionService.fetch_database_schema(str(notion_cfg.api_token), str(notion_cfg.database_id))
         t_notion = round((time.perf_counter() - t0) * 1000, 2)
         if notion_res.get("success"):
             db_title = notion_res.get("database_title", notion_cfg.database_title or "Target Database")
@@ -237,9 +243,9 @@ def run_system_diagnostics(db: Session = Depends(get_db)):
     # 3. AI API Endpoints Check
     t0 = time.perf_counter()
     ai_set = db.query(AISettings).first()
-    provider = ai_set.provider if ai_set else "mock"
-    api_key = ai_set.api_key if ai_set else ""
-    model_name = ai_set.model_name if ai_set else ""
+    provider = str(ai_set.provider) if (ai_set and ai_set.provider) else "mock"
+    api_key = str(ai_set.api_key) if (ai_set and ai_set.api_key) else ""
+    model_name = str(ai_set.model_name) if (ai_set and ai_set.model_name) else ""
 
     ai_res = AIService.test_ai_connection(provider, api_key, model_name)
     t_ai = round((time.perf_counter() - t0) * 1000, 2)
@@ -334,7 +340,7 @@ def export_system_configuration(
     from fastapi.responses import JSONResponse
     from sc_mail_hub.models import NotionFieldMapping, AutoIgnoreRule
 
-    export_data = {
+    export_data: Dict[str, Any] = {
         "version": "1.0",
         "exported_at": datetime.now(timezone.utc).isoformat()
     }

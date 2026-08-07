@@ -11,10 +11,18 @@ async function loadAccounts() {
 
     const filterAccSelect = document.getElementById("filter-account");
     if (filterAccSelect) {
-      const curVal = filterAccSelect.value || "ALL";
-      filterAccSelect.innerHTML = `<option value="ALL">All Connected Accounts</option>` +
-        accounts.map(a => `<option value="${a.id}">${escapeHtml(a.name)} (${escapeHtml(a.email_address)})</option>`).join("");
-      filterAccSelect.value = curVal;
+      try {
+        const filterRes = await fetch("/api/accounts/filter-options");
+        if (filterRes.ok) {
+          const options = await filterRes.json();
+          const curVal = filterAccSelect.value || "ALL";
+          filterAccSelect.innerHTML = `<option value="ALL">All Accounts</option>` +
+            options.map(opt => `<option value="${escapeHtml(opt.email_address)}">${escapeHtml(opt.label)}</option>`).join("");
+          filterAccSelect.value = curVal;
+        }
+      } catch (err) {
+        console.error("Filter options load error", err);
+      }
     }
 
     if (!listEl) return;
@@ -37,7 +45,7 @@ async function loadAccounts() {
         <div style="display:flex; gap:8px;">
           <button class="btn btn-outline btn-sm" onclick="testAccountConnection(${a.id})">🔌 Test</button>
           <button class="btn btn-outline btn-sm" onclick="syncAccount(${a.id})">⚡ Sync</button>
-          <button class="btn btn-outline btn-sm" style="color:#ef4444;" onclick="deleteAccount(${a.id})">🗑️ Delete</button>
+          <button class="btn btn-outline btn-sm" style="color:#ef4444;" onclick="openDeleteAccountModal(${a.id}, '${escapeHtml(a.name).replace(/'/g, "\\'")}', '${escapeHtml(a.email_address).replace(/'/g, "\\'")}')">🗑️ Delete</button>
         </div>
       </div>
     `).join("");
@@ -160,13 +168,48 @@ async function syncAccount(accId) {
   }
 }
 
-async function deleteAccount(accId) {
-  if (!confirm("Are you sure you want to remove this account?")) return;
+let activeDeleteAccountId = null;
+
+function openDeleteAccountModal(accId, name, email) {
+  activeDeleteAccountId = accId;
+  const nameEl = document.getElementById("delete-account-name-display");
+  const emailEl = document.getElementById("delete-account-email-display");
+  if (nameEl) nameEl.textContent = name || "Email Account";
+  if (emailEl) emailEl.textContent = email || "";
+
+  const modal = document.getElementById("delete-account-modal");
+  if (modal) modal.classList.add("active");
+}
+
+function closeDeleteAccountModal(e) {
+  if (e && e.target && !e.target.classList.contains("modal-overlay")) return;
+  const modal = document.getElementById("delete-account-modal");
+  if (modal) modal.classList.remove("active");
+  activeDeleteAccountId = null;
+}
+
+async function submitDeleteAccountModal() {
+  const selected = document.querySelector('input[name="delete_email_option"]:checked');
+  const deleteEmails = selected ? selected.value === "true" : false;
+  await confirmDeleteAccount(deleteEmails);
+}
+
+async function confirmDeleteAccount(deleteEmails) {
+  if (!activeDeleteAccountId) return;
+  const accId = activeDeleteAccountId;
+  closeDeleteAccountModal();
+
   try {
-    const res = await fetch(`/api/accounts/${accId}`, { method: "DELETE" });
+    const res = await fetch(`/api/accounts/${accId}?delete_emails=${deleteEmails}`, { method: "DELETE" });
+    const data = await res.json();
     if (res.ok) {
-      showToast("Account removed", "info");
+      showToast(deleteEmails ? "Account and associated emails removed." : "Account removed. Emails retained in Inbox.", "info");
       loadAccounts();
+      if (typeof loadCandidates === "function") {
+        loadCandidates();
+      }
+    } else {
+      showToast(data.detail || "Failed to remove account", "error");
     }
   } catch (err) {
     showToast(`Error: ${err.message}`, "error");

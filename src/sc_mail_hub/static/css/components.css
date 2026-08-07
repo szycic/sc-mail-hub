@@ -168,6 +168,27 @@ kbd {
   background: var(--accent-success-hover);
 }
 
+.btn-danger {
+  background: var(--accent-danger, #ef4444);
+  color: #ffffff;
+}
+
+.btn-danger:hover {
+  background: #dc2626;
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.4);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid transparent;
+}
+
+.btn-ghost:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-main);
+}
+
 .btn-outline {
   background: transparent;
   border: 1px solid var(--border-color);

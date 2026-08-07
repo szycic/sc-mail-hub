@@ -20,6 +20,32 @@ router = APIRouter(prefix="/api/accounts", tags=["Email Accounts"])
 def list_accounts(db: Session = Depends(get_db)):
     return db.query(EmailAccount).all()
 
+@router.get("/filter-options")
+def get_account_filter_options(db: Session = Depends(get_db)):
+    active_accounts = db.query(EmailAccount).all()
+    active_emails = {acc.email_address: acc.name for acc in active_accounts}
+
+    distinct_rows = db.query(EmailMessage.account_email).filter(EmailMessage.account_email.isnot(None)).distinct().all()
+    all_emails = [r[0] for r in distinct_rows if r[0]]
+
+    for email_addr in active_emails:
+        if email_addr not in all_emails:
+            all_emails.append(email_addr)
+
+    options = []
+    for email_addr in all_emails:
+        is_active = email_addr in active_emails
+        name = active_emails.get(email_addr)
+        label = f"{name} ({email_addr})" if (is_active and name and name != email_addr) else (email_addr if is_active else f"{email_addr} (Disconnected)")
+        options.append({
+            "email_address": email_addr,
+            "label": label,
+            "is_active": is_active
+        })
+
+    options.sort(key=lambda x: (not x["is_active"], x["label"].lower()))
+    return options
+
 @router.post("", response_model=EmailAccountOut)
 def create_account(payload: EmailAccountCreate, db: Session = Depends(get_db)):
     acc = EmailAccount(
@@ -35,11 +61,23 @@ def create_account(payload: EmailAccountCreate, db: Session = Depends(get_db)):
     return acc
 
 @router.delete("/{account_id}")
-def delete_account(account_id: int, db: Session = Depends(get_db)):
+def delete_account(account_id: int, delete_emails: bool = False, db: Session = Depends(get_db)):
     acc = db.query(EmailAccount).filter(EmailAccount.id == account_id).first()
     if not acc:
         raise HTTPException(status_code=404, detail="Account not found")
-    db.delete(acc)
+
+    if delete_emails:
+        email_ids = [msg_id for (msg_id,) in db.query(EmailMessage.id).filter(EmailMessage.account_id == account_id).all()]
+        if email_ids:
+            from sc_mail_hub.models import TaskCandidate
+            db.query(TaskCandidate).filter(TaskCandidate.email_id.in_(email_ids)).delete(synchronize_session=False)
+            db.query(EmailMessage).filter(EmailMessage.account_id == account_id).delete(synchronize_session=False)
+        db.delete(acc)
+    else:
+        db.query(EmailMessage).filter(EmailMessage.account_id == account_id).update({EmailMessage.account_id: None}, synchronize_session=False)
+        acc.emails = []
+        db.delete(acc)
+
     db.commit()
     return {"message": "Account removed successfully"}
 
@@ -68,16 +106,18 @@ def sync_account(account_id: int, db: Session = Depends(get_db)):
 @router.post("/{account_id}/test")
 def test_account_connection(account_id: int, db: Session = Depends(get_db)):
     acc = db.query(EmailAccount).filter(EmailAccount.id == account_id).first()
-    if not acc:
-        raise HTTPException(status_code=404, detail="Account not found")
+    if not acc or not acc.credentials_json:
+        raise HTTPException(status_code=404, detail="Account credentials not found")
 
-    res = EmailService.test_imap_connection(acc.credentials_json)
+    res = EmailService.test_imap_connection(str(acc.credentials_json))
     if not res.get("success"):
         raise HTTPException(status_code=400, detail=res.get("error", "IMAP connection failed"))
     return res
 
 @router.post("/test-credentials")
 def test_raw_credentials(payload: EmailAccountCreate):
+    if not payload.credentials_json:
+        raise HTTPException(status_code=400, detail="Credentials JSON is required")
     res = EmailService.test_imap_connection(payload.credentials_json)
     if not res.get("success"):
         raise HTTPException(status_code=400, detail=res.get("error", "IMAP connection failed"))

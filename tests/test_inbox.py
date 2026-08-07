@@ -124,6 +124,7 @@ def test_cannot_ignore_or_unignore_synced_candidates():
     db2 = SessionLocal()
     try:
         cand_check = db2.query(TaskCandidate).filter(TaskCandidate.id == cand_id).first()
+        assert cand_check is not None
         assert cand_check.status == "CREATED"
     finally:
         db2.close()
@@ -189,6 +190,71 @@ def test_fetch_from_imap_uses_body_peek():
             assert fetch_calls[0][0][2] == "(BODY.PEEK[])"
         finally:
             db.close()
+
+
+def test_delete_account_keep_emails():
+    from conftest import TestingSessionLocal as SessionLocal
+    from sc_mail_hub.models import EmailAccount, EmailMessage, TaskCandidate
+
+    db = SessionLocal()
+    acc = EmailAccount(name="Keep Test Acc", provider="generic", email_address="keep@example.com")
+    db.add(acc)
+    db.commit()
+
+    msg = EmailMessage(account_id=acc.id, sender="sender@test.com", subject="Subj", body_text="Body")
+    db.add(msg)
+    db.commit()
+
+    cand = TaskCandidate(email_id=msg.id, title="Candidate Title")
+    db.add(cand)
+    db.commit()
+
+    msg_id = msg.id
+    cand_id = cand.id
+    acc_id = acc.id
+
+    res = client.delete(f"/api/accounts/{acc_id}?delete_emails=false")
+    assert res.status_code == 200
+
+    db.expire_all()
+    assert db.query(EmailAccount).filter(EmailAccount.id == acc_id).first() is None
+    retained_msg = db.query(EmailMessage).filter(EmailMessage.id == msg_id).first()
+    assert retained_msg is not None
+    assert retained_msg.account_id is None
+    assert db.query(TaskCandidate).filter(TaskCandidate.id == cand_id).first() is not None
+    db.close()
+
+
+def test_delete_account_delete_emails():
+    from conftest import TestingSessionLocal as SessionLocal
+    from sc_mail_hub.models import EmailAccount, EmailMessage, TaskCandidate
+
+    db = SessionLocal()
+    acc = EmailAccount(name="Purge Test Acc", provider="generic", email_address="purge@example.com")
+    db.add(acc)
+    db.commit()
+
+    msg = EmailMessage(account_id=acc.id, sender="sender@test.com", subject="Purge Subj", body_text="Body")
+    db.add(msg)
+    db.commit()
+
+    cand = TaskCandidate(email_id=msg.id, title="Purge Candidate Title")
+    db.add(cand)
+    db.commit()
+
+    msg_id = msg.id
+    cand_id = cand.id
+    acc_id = acc.id
+
+    res = client.delete(f"/api/accounts/{acc_id}?delete_emails=true")
+    assert res.status_code == 200
+
+    db.expire_all()
+    assert db.query(EmailAccount).filter(EmailAccount.id == acc_id).first() is None
+    assert db.query(EmailMessage).filter(EmailMessage.id == msg_id).first() is None
+    assert db.query(TaskCandidate).filter(TaskCandidate.id == cand_id).first() is None
+    db.close()
+
 
 
 

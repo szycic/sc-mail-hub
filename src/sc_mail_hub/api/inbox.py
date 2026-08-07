@@ -391,9 +391,13 @@ def get_candidates(
     if account_id and account_id.upper() != "ALL":
         try:
             acc_id_int = int(account_id)
-            query = query.join(EmailMessage, TaskCandidate.email_id == EmailMessage.id).filter(EmailMessage.account_id == acc_id_int)
+            query = query.join(EmailMessage, TaskCandidate.email_id == EmailMessage.id).filter(
+                (EmailMessage.account_id == acc_id_int) | (EmailMessage.account_email == account_id)
+            )
         except ValueError:
-            pass
+            query = query.join(EmailMessage, TaskCandidate.email_id == EmailMessage.id).filter(
+                EmailMessage.account_email == account_id
+            )
 
     candidates = query.all()
 

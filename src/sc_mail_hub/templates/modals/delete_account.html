@@ -1,0 +1,66 @@
+<!-- Account Deletion Confirmation Modal -->
+<div id="delete-account-modal" class="modal-overlay" onclick="closeDeleteAccountModal(event)">
+  <div class="modal-card" onclick="event.stopPropagation()" style="max-width: 480px; width: 92vw;">
+    <div class="modal-header">
+      <div>
+        <span class="type-pill"
+          style="margin-bottom:6px; display:inline-block; background:rgba(239, 68, 68, 0.15); color:#ef4444;">⚠️
+          Remove Connected Account</span>
+        <h3 style="font-size:18px; color:var(--text-main); margin-bottom:4px;">Disconnect Account</h3>
+        <div style="font-size:13px; color:var(--text-muted);">
+          Choose what happens to synced emails.
+        </div>
+      </div>
+      <button class="modal-close-btn" onclick="closeDeleteAccountModal()">&times;</button>
+    </div>
+
+    <div class="modal-body" style="display:flex; flex-direction:column; gap:16px; padding-top:12px;">
+      <!-- Account Context Box -->
+      <div
+        style="background:var(--bg-hover, rgba(255,255,255,0.04)); border:1px solid var(--border-color, rgba(255,255,255,0.1)); border-radius:8px; padding:12px 14px; font-size:13px;">
+        <div
+          style="color:var(--text-muted); font-size:11px; font-weight:600; text-transform:uppercase; margin-bottom:4px;">
+          Account to Disconnect</div>
+        <div
+          style="color:var(--text-main); font-weight:600; font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"
+          id="delete-account-name-display"></div>
+        <div
+          style="color:var(--text-muted); font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"
+          id="delete-account-email-display"></div>
+      </div>
+
+      <div style="font-size:13px; color:var(--text-muted); line-height:1.5;">
+        Disconnecting this account stops automatic email fetching. Please choose what to do with previously imported
+        emails:
+      </div>
+
+      <!-- Radio Selection Options -->
+      <div style="display:flex; flex-direction:column; gap:10px;">
+        <label
+          style="display:flex; align-items:flex-start; gap:10px; padding:10px 12px; background:var(--bg-hover, rgba(255,255,255,0.03)); border:1px solid var(--border-color, rgba(255,255,255,0.1)); border-radius:8px; cursor:pointer;">
+          <input type="radio" name="delete_email_option" value="false" checked
+            style="margin-top:2px; accent-color:#3b82f6;">
+          <div style="font-size:13px; color:var(--text-main);">
+            <strong style="display:block; margin-bottom:2px;">📥 Keep imported emails</strong>
+            <span style="color:var(--text-muted); font-size:12px;">Unlinks emails from account and keeps them
+              accessible.</span>
+          </div>
+        </label>
+        <label
+          style="display:flex; align-items:flex-start; gap:10px; padding:10px 12px; background:var(--bg-hover, rgba(255,255,255,0.03)); border:1px solid var(--border-color, rgba(255,255,255,0.1)); border-radius:8px; cursor:pointer;">
+          <input type="radio" name="delete_email_option" value="true" style="margin-top:2px; accent-color:#ef4444;">
+          <div style="font-size:13px; color:var(--text-main);">
+            <strong style="display:block; margin-bottom:2px; color:#ef4444;">🗑️ Permanently delete emails</strong>
+            <span style="color:var(--text-muted); font-size:12px;">Purges all emails imported from this account.</span>
+          </div>
+        </label>
+      </div>
+    </div>
+
+    <div class="modal-footer" style="display:flex; justify-content:flex-end; gap:10px; margin-top:12px;">
+      <button class="btn btn-ghost" onclick="closeDeleteAccountModal()">Cancel</button>
+      <button class="btn btn-danger" onclick="submitDeleteAccountModal()"
+        style="background:rgba(239, 68, 68, 0.25); color:#ef4444; border:1px solid rgba(239, 68, 68, 0.5); font-weight:600; padding:8px 16px;">Confirm</button>
+    </div>
+  </div>
+</div>
