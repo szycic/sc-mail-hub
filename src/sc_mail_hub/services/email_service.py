@@ -25,25 +25,25 @@ logging.basicConfig(level=logging.INFO)
 # Preset demo sample emails for rapid testing matching user request diagram
 SAMPLE_EMAILS = [
     {
-        "sender": "finance@esnpoland.org",
+        "sender": "ESN Poland Finance <finance@esnpoland.org>",
         "subject": "Corrected invoice needs to be sent",
         "body": "Hi Szymon,\n\nPlease review the attached updated invoice for the national conference. We need the corrected invoice to be sent to the main sponsor by August 12th.\n\nBest,\nESN Poland Finance Team",
         "date_offset_days": 0
     },
     {
-        "sender": "board@esnpoland.org",
+        "sender": "ESN Poland Board <board@esnpoland.org>",
         "subject": "Register for National Assembly",
         "body": "Dear Members,\n\nRegistration for the upcoming ESN Poland National Assembly is now open! Please ensure you register your delegation before August 20th.\n\nLink to form: https://esnpoland.org/na-register\n\nRegards,\nESN Poland Board",
         "date_offset_days": 0
     },
     {
-        "sender": "no-reply@google.com",
+        "sender": "Google Cloud <no-reply@google.com>",
         "subject": "Newsletter from Google: What's new in Cloud & AI",
         "body": "Discover the latest product updates, developer features, and AI announcements from Google Cloud in this month's digest.\n\nRead more on our blog.",
         "date_offset_days": 1
     },
     {
-        "sender": "treasurer@esnpoland.org",
+        "sender": "ESN Poland Audit Committee <treasurer@esnpoland.org>",
         "subject": "Submit Q3 Financial Report",
         "body": "Attention Section Treasurers,\n\nAll quarterly expenditure logs and receipt scans must be uploaded to the shared folder prior to August 15th for audit.\n\nThank you,\nESN Poland Audit Committee",
         "date_offset_days": 2
@@ -392,8 +392,64 @@ class EmailService:
             logger.error(f"Error purging all PDF files: {err}")
 
     @staticmethod
+    def format_email_header_address(
+        raw_value: Optional[str],
+        fallback_email: Optional[str] = None,
+        fallback_name: Optional[str] = None
+    ) -> str:
+        """Format name and email address so that email address is included in <> next to names.
+
+        Examples:
+          - 'John Doe <john@example.com>' -> 'John Doe <john@example.com>'
+          - 'John Doe' (with fallback_email='john@example.com') -> 'John Doe <john@example.com>'
+          - 'john@example.com' (with fallback_name='John Doe') -> 'John Doe <john@example.com>'
+          - 'john@example.com' -> 'john@example.com <john@example.com>'
+        """
+        if not raw_value or not str(raw_value).strip():
+            if fallback_name and fallback_email:
+                return f"{fallback_name} <{fallback_email}>"
+            elif fallback_email:
+                return f"<{fallback_email}>"
+            elif fallback_name:
+                return fallback_name
+            return "Unknown"
+
+        val = str(raw_value).strip()
+
+        # 1. Check if string already contains `<email@domain>` format
+        angle_match = re.search(r'<([^>]+)>', val)
+        if angle_match:
+            email_part = angle_match.group(1).strip()
+            name_part = val[:angle_match.start()].strip().strip('"').strip("'")
+            if not name_part and fallback_name:
+                name_part = fallback_name
+            if name_part:
+                return f"{name_part} <{email_part}>"
+            return f"<{email_part}>"
+
+        # 2. Check if string contains an email address (with @) without angle brackets
+        email_match = re.search(r'[\w\.-]+@[\w\.-]+\.\w+', val)
+        if email_match:
+            email_part = email_match.group(0).strip()
+            prefix = val[:email_match.start()].strip().strip('"').strip("'")
+            suffix = val[email_match.end():].strip().strip('"').strip("'")
+            name_part = f"{prefix} {suffix}".strip()
+            if not name_part and fallback_name:
+                name_part = fallback_name
+            if not name_part:
+                name_part = email_part
+            return f"{name_part} <{email_part}>"
+
+        # 3. If string is a display name with no email inside
+        name_part = val.strip().strip('"').strip("'")
+        if fallback_email:
+            return f"{name_part} <{fallback_email}>"
+        return name_part
+
+    @staticmethod
     def generate_email_pdf(email_msg: EmailMessage) -> str:
         """Generate a clean PDF report of the raw email message supporting Polish characters and return relative URL path."""
+        import html
         from reportlab.lib.pagesizes import A4
         from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
         from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, HRFlowable
@@ -428,11 +484,21 @@ class EmailService:
                         pass
 
             subject_text = email_msg.subject or 'No Subject'
+            sender_str = EmailService.format_email_header_address(raw_value=email_msg.sender)
+
+            recip_fallback_email = email_msg.account_email or (email_msg.account.email_address if email_msg.account else None)
+            recip_fallback_name = email_msg.account.name if (email_msg.account and email_msg.account.name) else None
+            recipient_str = EmailService.format_email_header_address(
+                raw_value=email_msg.recipient,
+                fallback_email=recip_fallback_email,
+                fallback_name=recip_fallback_name
+            )
+
             doc = SimpleDocTemplate(
                 pdf_path,
                 pagesize=A4,
                 title=subject_text,
-                author=email_msg.sender or "SC Mail Hub",
+                author=sender_str or "SC Mail Hub",
                 leftMargin=36,
                 rightMargin=36,
                 topMargin=36,
@@ -446,12 +512,12 @@ class EmailService:
             body_style = ParagraphStyle('EmailBody', parent=styles['Normal'], fontName=pdf_font_name, fontSize=11, leading=16, textColor=HexColor('#0f172a'))
 
             story = []
-            story.append(Paragraph(f"<b>Subject:</b> {subject_text}", title_style))
+            story.append(Paragraph(f"<b>Subject:</b> {html.escape(subject_text)}", title_style))
             story.append(Spacer(1, 10))
-            story.append(Paragraph(f"<b>From:</b> {email_msg.sender or 'Unknown'}", meta_style))
-            story.append(Paragraph(f"<b>To:</b> {email_msg.recipient or ''}", meta_style))
+            story.append(Paragraph(f"<b>From:</b> {html.escape(sender_str)}", meta_style))
+            story.append(Paragraph(f"<b>To:</b> {html.escape(recipient_str)}", meta_style))
             date_str = email_msg.received_at.strftime("%Y-%m-%d %H:%M UTC") if email_msg.received_at else ""
-            story.append(Paragraph(f"<b>Date:</b> {date_str}", meta_style))
+            story.append(Paragraph(f"<b>Date:</b> {html.escape(date_str)}", meta_style))
             story.append(Spacer(1, 10))
             story.append(HRFlowable(width="100%", thickness=1, color="#cbd5e1", spaceAfter=15))
 
@@ -460,7 +526,7 @@ class EmailService:
             story.append(Paragraph(safe_body, body_style))
 
             doc.build(story)
-            logger.info(f"📄 Generated PDF with Polish character support for email {email_msg.id}: {pdf_path}")
+            logger.info(f"📄 Generated PDF for email {email_msg.id}: {pdf_path}")
         except Exception as e:
             logger.error(f"❌ Failed to generate PDF for email {email_msg.id}: {e}")
 
