@@ -53,3 +53,34 @@ def test_generate_email_pdf_includes_email_in_angle_brackets(tmp_path, monkeypat
     pdf_file = tmp_path / "email_999.pdf"
     assert pdf_file.exists()
     assert pdf_file.stat().st_size > 0
+
+
+def test_generate_email_pdf_with_html_body(tmp_path, monkeypatch):
+    """Test that generate_email_pdf parses HTML elements (headings, bold, lists, links) without errors."""
+    monkeypatch.setattr(EmailService, "get_pdf_dir", lambda: tmp_path)
+
+    html_body = """
+    <h2>Invoice & Task Update</h2>
+    <p>Dear Szymon,</p>
+    <p>Please review <strong>Task #101</strong> at <a href="https://esnpoland.org">ESN Poland Portal</a>.</p>
+    <ul>
+        <li>Review item A</li>
+        <li>Review item B</li>
+    </ul>
+    """
+    msg = EmailMessage(
+        id=1000,
+        sender="Finance Team <finance@esnpoland.org>",
+        recipient="Szymon <szymon@example.com>",
+        subject="HTML PDF Test",
+        body_text=html_body,
+        received_at=datetime(2026, 8, 12, 12, 0, 0, tzinfo=timezone.utc)
+    )
+
+    pdf_rel_path = EmailService.generate_email_pdf(msg)
+    assert pdf_rel_path == "/static/pdfs/email_1000.pdf"
+
+    pdf_file = tmp_path / "email_1000.pdf"
+    assert pdf_file.exists()
+    assert pdf_file.stat().st_size > 0
+

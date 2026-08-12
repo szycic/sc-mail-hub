@@ -7,10 +7,12 @@ and ReportLab A4 PDF generation with full Polish UTF-8 character support.
 import imaplib
 import email
 import email.utils
+import html
 import json
 import re
 import os
 import logging
+from html.parser import HTMLParser
 from email.header import decode_header
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -49,6 +51,182 @@ SAMPLE_EMAILS = [
         "date_offset_days": 2
     }
 ]
+
+
+class HTMLToReportLabParser(HTMLParser):
+    """Parses HTML email body content into ReportLab flowables (Paragraphs, Spacers, HRFlowables)."""
+
+    def __init__(self, body_style, pdf_font_name):
+        super().__init__()
+        self.body_style = body_style
+        self.pdf_font_name = pdf_font_name
+        self.story = []
+
+        self.current_paragraph_acc = []
+        self.inline_tag_stack = []
+        self.skip_content = False
+        self.in_list = None  # 'ul' or 'ol'
+        self.list_index = 0
+        self.in_pre = False
+
+        self.block_tags = {'p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'pre', 'li', 'hr'}
+
+    def _flush_paragraph(self, style=None, space_after=6):
+        text = "".join(self.current_paragraph_acc).strip()
+        self.current_paragraph_acc = []
+        if text:
+            p_style = style or self.body_style
+            for tag_name, closing_str in reversed(self.inline_tag_stack):
+                text += closing_str
+            try:
+                from reportlab.platypus import Paragraph, Spacer
+                self.story.append(Paragraph(text, p_style))
+                if space_after > 0:
+                    self.story.append(Spacer(1, space_after))
+            except Exception:
+                from reportlab.platypus import Paragraph, Spacer
+                clean_txt = re.sub(r'<[^>]+>', '', text)
+                safe_txt = html.escape(clean_txt).replace("\n", "<br/>")
+                self.story.append(Paragraph(safe_txt, p_style))
+                if space_after > 0:
+                    self.story.append(Spacer(1, space_after))
+
+    def handle_starttag(self, tag, attrs):
+        tag = tag.lower()
+        if tag in ('script', 'style', 'head'):
+            self.skip_content = True
+            return
+
+        if self.skip_content:
+            return
+
+        if tag in self.block_tags:
+            self._flush_paragraph()
+
+        attr_dict = dict(attrs)
+
+        if tag in ('b', 'strong'):
+            self.current_paragraph_acc.append('<b>')
+            self.inline_tag_stack.append(('b', '</b>'))
+        elif tag in ('i', 'em'):
+            self.current_paragraph_acc.append('<i>')
+            self.inline_tag_stack.append(('i', '</i>'))
+        elif tag == 'u':
+            self.current_paragraph_acc.append('<u>')
+            self.inline_tag_stack.append(('u', '</u>'))
+        elif tag == 'a':
+            href = attr_dict.get('href', '')
+            if href:
+                href_escaped = html.escape(href)
+                self.current_paragraph_acc.append(f'<a href="{href_escaped}">')
+                self.inline_tag_stack.append(('a', '</a>'))
+            else:
+                self.inline_tag_stack.append(('a', ''))
+        elif tag == 'font':
+            color = attr_dict.get('color', '')
+            color_attr = f' color="{html.escape(color)}"' if color else ''
+            self.current_paragraph_acc.append(f'<font{color_attr}>')
+            self.inline_tag_stack.append(('font', '</font>'))
+        elif tag == 'strike':
+            self.current_paragraph_acc.append('<strike>')
+            self.inline_tag_stack.append(('strike', '</strike>'))
+        elif tag == 'sub':
+            self.current_paragraph_acc.append('<sub>')
+            self.inline_tag_stack.append(('sub', '</sub>'))
+        elif tag == 'sup':
+            self.current_paragraph_acc.append('<sup>')
+            self.inline_tag_stack.append(('sup', '</sup>'))
+        elif tag in ('br', 'br/'):
+            self.current_paragraph_acc.append('<br/>')
+        elif tag == 'hr':
+            from reportlab.platypus import HRFlowable
+            self.story.append(HRFlowable(width="100%", thickness=1, color="#cbd5e1", spaceAfter=10, spaceBefore=5))
+        elif tag in ('h1', 'h2', 'h3', 'h4', 'h5', 'h6'):
+            from reportlab.lib.colors import HexColor
+            from reportlab.lib.styles import ParagraphStyle
+            size_map = {'h1': 16, 'h2': 14, 'h3': 13, 'h4': 12, 'h5': 11, 'h6': 10}
+            font_size = size_map.get(tag, 14)
+            h_style = ParagraphStyle(
+                f'HTML_{tag}',
+                parent=self.body_style,
+                fontName=self.pdf_font_name,
+                fontSize=font_size,
+                leading=font_size + 4,
+                textColor=HexColor('#1e293b')
+            )
+            self._flush_paragraph(style=h_style, space_after=8)
+            self.current_paragraph_acc.append('<b>')
+            self.inline_tag_stack.append(('h_bold', '</b>'))
+        elif tag == 'ul':
+            self.in_list = 'ul'
+        elif tag == 'ol':
+            self.in_list = 'ol'
+            self.list_index = 0
+        elif tag == 'li':
+            if self.in_list == 'ol':
+                self.list_index += 1
+                prefix = f"{self.list_index}. "
+            else:
+                prefix = "&bull; "
+            self.current_paragraph_acc.append(prefix)
+        elif tag == 'pre':
+            from reportlab.lib.colors import HexColor
+            from reportlab.lib.styles import ParagraphStyle
+            self.in_pre = True
+            pre_style = ParagraphStyle(
+                'HTML_Pre',
+                parent=self.body_style,
+                fontName=self.pdf_font_name,
+                fontSize=9.5,
+                leading=13,
+                textColor=HexColor('#334155'),
+                backColor=HexColor('#f1f5f9'),
+                borderPadding=6
+            )
+            self._flush_paragraph(style=pre_style, space_after=8)
+
+    def handle_endtag(self, tag):
+        tag = tag.lower()
+        if tag in ('script', 'style', 'head'):
+            self.skip_content = False
+            return
+
+        if self.skip_content:
+            return
+
+        if tag in ('b', 'strong', 'i', 'em', 'u', 'a', 'font', 'strike', 'sub', 'sup', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'):
+            for i in range(len(self.inline_tag_stack) - 1, -1, -1):
+                t_name, closing = self.inline_tag_stack[i]
+                if t_name in (tag, 'h_bold') or (tag in ('b', 'strong') and t_name == 'b') or (tag in ('i', 'em') and t_name == 'i'):
+                    self.current_paragraph_acc.append(closing)
+                    self.inline_tag_stack.pop(i)
+                    break
+
+        elif tag in self.block_tags:
+            self._flush_paragraph()
+            if tag == 'pre':
+                self.in_pre = False
+
+        elif tag in ('ul', 'ol'):
+            self.in_list = None
+            self.list_index = 0
+
+    def handle_data(self, data):
+        if self.skip_content or not data:
+            return
+
+        escaped = html.escape(data)
+        if self.in_pre:
+            escaped = escaped.replace("\n", "<br/>")
+        else:
+            escaped = escaped.replace("\n", " ")
+
+        self.current_paragraph_acc.append(escaped)
+
+    def finish(self):
+        self._flush_paragraph(space_after=0)
+        return self.story
+
 
 class EmailService:
     _last_sync_stats: Dict[str, Any] = {
@@ -522,8 +700,23 @@ class EmailService:
             story.append(HRFlowable(width="100%", thickness=1, color="#cbd5e1", spaceAfter=15))
 
             body_text = email_msg.body_text or ""
-            safe_body = body_text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br/>")
-            story.append(Paragraph(safe_body, body_style))
+            if re.search(r'<[a-zA-Z][^>]*>', body_text):
+                try:
+                    parser = HTMLToReportLabParser(body_style=body_style, pdf_font_name=pdf_font_name)
+                    parser.feed(body_text)
+                    html_flowables = parser.finish()
+                    if html_flowables:
+                        story.extend(html_flowables)
+                    else:
+                        safe_body = html.escape(body_text).replace("\n", "<br/>")
+                        story.append(Paragraph(safe_body, body_style))
+                except Exception as parse_err:
+                    logger.warning(f"HTML PDF parse error for email {email_msg.id}: {parse_err}")
+                    safe_body = html.escape(body_text).replace("\n", "<br/>")
+                    story.append(Paragraph(safe_body, body_style))
+            else:
+                safe_body = html.escape(body_text).replace("\n", "<br/>")
+                story.append(Paragraph(safe_body, body_style))
 
             doc.build(story)
             logger.info(f"📄 Generated PDF for email {email_msg.id}: {pdf_path}")
@@ -531,3 +724,4 @@ class EmailService:
             logger.error(f"❌ Failed to generate PDF for email {email_msg.id}: {e}")
 
         return f"/static/pdfs/{pdf_filename}"
+

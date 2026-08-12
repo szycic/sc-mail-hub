@@ -13,7 +13,7 @@ load_dotenv()
 class Settings:
     """Central settings class holding system environment configuration."""
     PROJECT_NAME: str = "SC Mail Hub"
-    VERSION: str = "1.2.3"
+    VERSION: str = "1.3.0"
     DB_PATH: str = os.getenv("DB_PATH", "data/sc_mail_hub.db")
     DB_URL: str = os.getenv("DB_URL", f"sqlite:///{DB_PATH}")
     HOST: str = os.getenv("HOST", "0.0.0.0")
