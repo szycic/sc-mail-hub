@@ -463,6 +463,24 @@ def get_candidates(
     sort_mode = (sort_by or "NEWEST").upper()
     if sort_mode == "OLDEST":
         result.sort(key=lambda item: item.id)
+    elif sort_mode == "UPDATED_NEWEST":
+        def get_updated_key(item):
+            dt = item.updated_at or item.created_at
+            if dt is None:
+                return datetime.min.replace(tzinfo=timezone.utc)
+            if dt.tzinfo is None:
+                return dt.replace(tzinfo=timezone.utc)
+            return dt
+        result.sort(key=get_updated_key, reverse=True)
+    elif sort_mode == "UPDATED_OLDEST":
+        def get_updated_key(item):
+            dt = item.updated_at or item.created_at
+            if dt is None:
+                return datetime.min.replace(tzinfo=timezone.utc)
+            if dt.tzinfo is None:
+                return dt.replace(tzinfo=timezone.utc)
+            return dt
+        result.sort(key=get_updated_key)
     elif sort_mode == "DIRECT_FIRST":
         result.sort(key=lambda item: (0 if item.recipient_type == "DIRECT" else 1, -item.id))
     elif sort_mode == "GROUP_FIRST":

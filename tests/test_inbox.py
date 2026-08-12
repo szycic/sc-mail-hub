@@ -34,6 +34,10 @@ def test_sample_ingest_and_inbox():
 
     inbox_res = client.get("/api/inbox/candidates?status=ALL")
     assert inbox_res.status_code == 200
+    candidates = inbox_res.json().get("items", [])
+    if candidates:
+        assert "updated_at" in candidates[0]
+        assert candidates[0]["updated_at"] is not None
 
 def test_ignore_candidate():
     inbox_res = client.get("/api/inbox/candidates?status=PENDING")
@@ -82,6 +86,16 @@ def test_inbox_candidate_search():
     assert res.status_code == 200
     data = res.json()
     assert "items" in data
+
+
+def test_inbox_candidate_sorting_by_updated_at():
+    res_new = client.get("/api/inbox/candidates?sort_by=UPDATED_NEWEST")
+    assert res_new.status_code == 200
+    assert "items" in res_new.json()
+
+    res_old = client.get("/api/inbox/candidates?sort_by=UPDATED_OLDEST")
+    assert res_old.status_code == 200
+    assert "items" in res_old.json()
 
 
 def test_cannot_ignore_or_unignore_synced_candidates():

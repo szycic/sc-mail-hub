@@ -182,12 +182,17 @@ async function fillTaskReviewForm(candidate) {
   const recipientEl = document.getElementById("review-email-recipient");
   const subjectEl = document.getElementById("review-email-subject");
   const dateEl = document.getElementById("review-email-received");
+  const updatedEl = document.getElementById("review-candidate-updated");
   const bodyEl = document.getElementById("review-email-body");
 
   if (senderEl) senderEl.textContent = candidate.sender || "Unknown Sender";
   if (recipientEl) recipientEl.textContent = candidate.recipient || "Me";
   if (subjectEl) subjectEl.textContent = candidate.subject || candidate.title || "No Subject";
   if (dateEl) dateEl.textContent = candidate.received_at || "";
+  if (updatedEl) {
+    const rawVal = candidate.updated_at || candidate.created_at;
+    updatedEl.textContent = rawVal ? formatDateTime(rawVal) : "N/A";
+  }
 
   if (bodyEl) {
     bodyEl.innerHTML = '<div style="color:var(--text-dim);">⏳ Loading original email text...</div>';

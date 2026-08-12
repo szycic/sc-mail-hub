@@ -172,3 +172,25 @@ function formatTimeAgo(dateInput) {
   const days = Math.floor(hours / 24);
   return `${days}d ago`;
 }
+
+function formatDateTime(dateInput) {
+  if (!dateInput) return "";
+  const str = String(dateInput).trim();
+  if (!str || str.toLowerCase() === "null" || str.toLowerCase() === "none") return "";
+
+  if (/^\d{1,2}\s+[A-Za-z]{3}\s+\d{4},\s+\d{2}:\d{2}$/.test(str)) {
+    return str;
+  }
+
+  const d = new Date(str);
+  if (isNaN(d.getTime())) return str;
+
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const day = String(d.getDate()).padStart(2, "0");
+  const month = months[d.getMonth()];
+  const year = d.getFullYear();
+  const hours = String(d.getHours()).padStart(2, "0");
+  const mins = String(d.getMinutes()).padStart(2, "0");
+
+  return `${day} ${month} ${year}, ${hours}:${mins}`;
+}

@@ -40,6 +40,7 @@ class TaskCandidateOut(TaskCandidateBase):
     notion_page_id: Optional[str] = None
     notion_url: Optional[str] = None
     created_at: datetime
+    updated_at: Optional[datetime] = None
     sender: Optional[str] = None
     recipient: Optional[str] = None
     account_email: Optional[str] = None
