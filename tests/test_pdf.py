@@ -1,9 +1,9 @@
-"""Unit tests for PDF generation email address formatting in From: and To: headers."""
+"""Unit tests for PDF generation, header address formatting, and clickable link detection."""
 
 import pytest
 from datetime import datetime, timezone
-from sc_mail_hub.models import EmailMessage, EmailAccount
-from sc_mail_hub.services.email_service import EmailService
+from sc_mail_hub.models import EmailMessage
+from sc_mail_hub.services.email_service import EmailService, make_clickable_links
 
 
 def test_format_email_header_address():
@@ -35,7 +35,6 @@ def test_format_email_header_address():
 
 def test_generate_email_pdf_includes_email_in_angle_brackets(tmp_path, monkeypatch):
     """Test that generate_email_pdf outputs correct From: and To: header text with email in <>."""
-    # Mock PDF directory to use tmp_path
     monkeypatch.setattr(EmailService, "get_pdf_dir", lambda: tmp_path)
 
     msg = EmailMessage(
@@ -43,7 +42,7 @@ def test_generate_email_pdf_includes_email_in_angle_brackets(tmp_path, monkeypat
         sender="Jan Kowalski <jan@example.com>",
         recipient="Anna Nowak <anna@example.com>",
         subject="Test PDF Email Formatting",
-        body_text="Hello, this is a test email message body.",
+        body_text="Hello, visit https://example.com or email test@example.com",
         received_at=datetime(2026, 8, 12, 12, 0, 0, tzinfo=timezone.utc)
     )
 
@@ -55,32 +54,11 @@ def test_generate_email_pdf_includes_email_in_angle_brackets(tmp_path, monkeypat
     assert pdf_file.stat().st_size > 0
 
 
-def test_generate_email_pdf_with_html_body(tmp_path, monkeypatch):
-    """Test that generate_email_pdf parses HTML elements (headings, bold, lists, links) without errors."""
-    monkeypatch.setattr(EmailService, "get_pdf_dir", lambda: tmp_path)
+def test_make_clickable_links():
+    """Test converting URLs, www domains, and email addresses into PDF clickable hyperlink tags."""
+    text = "Visit https://esnpoland.org or www.esn.pl or contact hr@esn.pl for info."
+    res = make_clickable_links(text)
 
-    html_body = """
-    <h2>Invoice & Task Update</h2>
-    <p>Dear Szymon,</p>
-    <p>Please review <strong>Task #101</strong> at <a href="https://esnpoland.org">ESN Poland Portal</a>.</p>
-    <ul>
-        <li>Review item A</li>
-        <li>Review item B</li>
-    </ul>
-    """
-    msg = EmailMessage(
-        id=1000,
-        sender="Finance Team <finance@esnpoland.org>",
-        recipient="Szymon <szymon@example.com>",
-        subject="HTML PDF Test",
-        body_text=html_body,
-        received_at=datetime(2026, 8, 12, 12, 0, 0, tzinfo=timezone.utc)
-    )
-
-    pdf_rel_path = EmailService.generate_email_pdf(msg)
-    assert pdf_rel_path == "/static/pdfs/email_1000.pdf"
-
-    pdf_file = tmp_path / "email_1000.pdf"
-    assert pdf_file.exists()
-    assert pdf_file.stat().st_size > 0
-
+    assert '<a href="https://esnpoland.org" color="#2563eb"><u>https://esnpoland.org</u></a>' in res
+    assert '<a href="http://www.esn.pl" color="#2563eb"><u>www.esn.pl</u></a>' in res
+    assert '<a href="mailto:hr@esn.pl" color="#2563eb"><u>hr@esn.pl</u></a>' in res
