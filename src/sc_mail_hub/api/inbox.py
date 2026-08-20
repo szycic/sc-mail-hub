@@ -19,7 +19,7 @@ from sc_mail_hub.services.notion_service import NotionService
 from sc_mail_hub.services.push_service import PushService
 
 from datetime import datetime, timezone
-from typing import Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set
 
 router = APIRouter(prefix="/api/inbox", tags=["Inbox"])
 INGEST_JOB_QUEUES: Dict[str, asyncio.Queue] = {}
