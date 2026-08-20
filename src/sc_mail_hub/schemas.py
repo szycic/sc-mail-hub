@@ -3,9 +3,18 @@
 Covers TaskCandidates, EmailAccounts, Notion Integration Config, Field Mappings, and AI Settings.
 """
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_serializer
 from typing import Optional, List, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
+
+
+def serialize_utc_datetime(dt: Optional[datetime]) -> Optional[str]:
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.isoformat()
+
 
 
 # --- Task Candidate Schemas ---
@@ -52,6 +61,10 @@ class TaskCandidateOut(TaskCandidateBase):
 
     model_config = ConfigDict(from_attributes=True)
 
+    @field_serializer("created_at", "updated_at", mode="plain", check_fields=False)
+    def serialize_candidate_dt(self, dt: Optional[datetime]) -> Optional[str]:
+        return serialize_utc_datetime(dt)
+
 
 class BatchCandidatesRequest(BaseModel):
     """Payload for batch operations on candidate IDs."""
@@ -90,6 +103,11 @@ class EmailAccountOut(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+    @field_serializer("created_at", "last_synced_at", mode="plain", check_fields=False)
+    def serialize_account_dt(self, dt: Optional[datetime]) -> Optional[str]:
+        return serialize_utc_datetime(dt)
+
 
 
 # --- Notion Config & Field Mapping Schemas ---

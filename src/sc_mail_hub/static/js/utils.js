@@ -57,6 +57,24 @@ function escapeHtml(str) {
     .replace(/'/g, "&#039;");
 }
 
+function parseUtcDate(dateInput) {
+  if (!dateInput) return null;
+  if (dateInput instanceof Date) {
+    return isNaN(dateInput.getTime()) ? null : dateInput;
+  }
+  let str = String(dateInput).trim();
+  if (!str || str.toLowerCase() === "null" || str.toLowerCase() === "none") return null;
+
+  if (/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(\.\d+)?$/.test(str)) {
+    str = str.replace(" ", "T") + "Z";
+  } else if (/^\d{4}-\d{2}-\d{2}[T ]\d{2}$/.test(str)) {
+    str = str.replace(" ", "T") + ":00Z";
+  }
+
+  const d = new Date(str);
+  return isNaN(d.getTime()) ? null : d;
+}
+
 function formatStandardDisplayDate(dateStr) {
   if (!dateStr || !String(dateStr).trim() || String(dateStr).trim().toLowerCase() === "null" || String(dateStr).trim().toLowerCase() === "none") return "";
   let str = String(dateStr).trim();
@@ -93,8 +111,8 @@ function formatStandardDisplayDate(dateStr) {
     return `${day} ${month} ${year}`;
   }
 
-  const parsed = new Date(str);
-  if (!isNaN(parsed.getTime())) {
+  const parsed = parseUtcDate(str);
+  if (parsed) {
     const dd = String(parsed.getDate()).padStart(2, "0");
     const mm = months[parsed.getMonth()];
     const yyyy = parsed.getFullYear();
@@ -143,8 +161,8 @@ function formatDateForPicker(dateStr) {
     }
   }
 
-  const d = new Date(str);
-  if (!isNaN(d.getTime())) {
+  const d = parseUtcDate(str);
+  if (d) {
     const yyyy = d.getFullYear();
     const mm = String(d.getMonth() + 1).padStart(2, "0");
     const dd = String(d.getDate()).padStart(2, "0");
@@ -156,8 +174,8 @@ function formatDateForPicker(dateStr) {
 
 function formatTimeAgo(dateInput) {
   if (!dateInput) return "Never";
-  const date = new Date(dateInput);
-  if (isNaN(date.getTime())) return String(dateInput);
+  const date = parseUtcDate(dateInput);
+  if (!date) return String(dateInput);
 
   const seconds = Math.floor((new Date() - date) / 1000);
   if (seconds < 5) return "just now";
@@ -182,8 +200,8 @@ function formatDateTime(dateInput) {
     return str;
   }
 
-  const d = new Date(str);
-  if (isNaN(d.getTime())) return str;
+  const d = parseUtcDate(str);
+  if (!d) return str;
 
   const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   const day = String(d.getDate()).padStart(2, "0");
@@ -194,3 +212,4 @@ function formatDateTime(dateInput) {
 
   return `${day} ${month} ${year}, ${hours}:${mins}`;
 }
+

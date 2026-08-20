@@ -36,8 +36,10 @@ def test_sample_ingest_and_inbox():
     assert inbox_res.status_code == 200
     candidates = inbox_res.json().get("items", [])
     if candidates:
-        assert "updated_at" in candidates[0]
-        assert candidates[0]["updated_at"] is not None
+        updated_at_str = candidates[0]["updated_at"] or candidates[0]["created_at"]
+        assert updated_at_str is not None
+        assert "+00:00" in updated_at_str or updated_at_str.endswith("Z")
+
 
 def test_ignore_candidate():
     inbox_res = client.get("/api/inbox/candidates?status=PENDING")

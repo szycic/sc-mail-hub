@@ -261,9 +261,15 @@ function updateLastSyncedDisplay() {
   if (!el) return;
   if (!lastSyncedIso) {
     el.textContent = "Last synced: Never";
+    el.removeAttribute("title");
     return;
   }
-  const syncDate = new Date(lastSyncedIso);
+  const syncDate = parseUtcDate(lastSyncedIso);
+  if (!syncDate) {
+    el.textContent = "Last synced: Never";
+    el.removeAttribute("title");
+    return;
+  }
   const now = new Date();
   const diffSec = Math.floor((now - syncDate) / 1000);
 
@@ -279,6 +285,7 @@ function updateLastSyncedDisplay() {
     label = `${days} day${days > 1 ? 's' : ''} ago`;
   }
   el.textContent = `Last synced: ${label}`;
+  el.title = `Last synced at ${formatDateTime(lastSyncedIso)}`;
 }
 
 function clearCandidateFocus() {

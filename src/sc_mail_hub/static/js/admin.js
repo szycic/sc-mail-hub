@@ -86,6 +86,11 @@ async function loadSyncHealthStats() {
     }
     if (timeEl) {
       timeEl.textContent = data.last_synced_at ? `Last sync: ${formatTimeAgo(data.last_synced_at)}` : "Not synced yet";
+      if (data.last_synced_at) {
+        timeEl.title = `Last synced at ${formatDateTime(data.last_synced_at)}`;
+      } else {
+        timeEl.removeAttribute("title");
+      }
     }
     if (countEl) {
       countEl.textContent = `${data.emails_fetched_today || 0} emails`;
@@ -662,7 +667,7 @@ async function runSystemDiagnostics() {
         ${overallBadge}
         <span style="font-size:12px; color:var(--text-muted);">Completed 5 checks in <strong>${data.total_duration_ms} ms</strong></span>
       </div>
-      <span style="font-size:11px; color:var(--text-dim); font-family:monospace;">${new Date(data.timestamp).toLocaleTimeString()}</span>
+      <span style="font-size:11px; color:var(--text-dim); font-family:monospace;">${(parseUtcDate(data.timestamp) || new Date()).toLocaleTimeString()}</span>
     `;
 
     const cardsHtml = Object.keys(results).map(key => {
