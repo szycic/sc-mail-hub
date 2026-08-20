@@ -188,7 +188,7 @@ async function fillTaskReviewForm(candidate) {
   if (senderEl) senderEl.textContent = candidate.sender || "Unknown Sender";
   if (recipientEl) recipientEl.textContent = candidate.recipient || "Me";
   if (subjectEl) subjectEl.textContent = candidate.subject || candidate.title || "No Subject";
-  if (dateEl) dateEl.textContent = candidate.received_at || "";
+  if (dateEl) dateEl.textContent = candidate.received_at ? formatDateTime(candidate.received_at) : "";
   if (updatedEl) {
     const rawVal = candidate.updated_at || candidate.created_at;
     updatedEl.textContent = rawVal ? formatDateTime(rawVal) : "N/A";

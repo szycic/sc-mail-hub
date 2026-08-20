@@ -70,6 +70,16 @@ def set_last_synced_at(dt_iso: Optional[str] = None) -> str:
     return LAST_SYNCED_AT
 
 
+def _format_received_iso(dt: Any) -> Optional[str]:
+    if dt is None:
+        return None
+    if isinstance(dt, str):
+        return dt
+    if hasattr(dt, "tzinfo") and dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.isoformat() if hasattr(dt, "isoformat") else str(dt)
+
+
 def reset_last_pending_count(val: Optional[int] = None):
     global LAST_PENDING_COUNT, SYNC_START_PENDING_COUNT, IS_SYNCING
     LAST_PENDING_COUNT = val
@@ -421,7 +431,7 @@ def get_candidates(
             out.recipient = email_msg.recipient
             out.subject = email_msg.subject
             if email_msg.received_at:
-                out.received_at = email_msg.received_at.strftime("%d %b %Y, %H:%M")
+                out.received_at = _format_received_iso(email_msg.received_at)
 
             acc = accounts_by_id.get(email_msg.account_id) if email_msg.account_id else None
             account_email = acc.email_address if acc else ""
@@ -514,7 +524,7 @@ def get_candidate_email_preview(candidate_id: int, db: Session = Depends(get_db)
             "subject": candidate.title,
             "sender": "Unknown Sender",
             "recipient": "Me",
-            "received_at": candidate.created_at.strftime("%d %b %Y, %H:%M") if candidate.created_at else "",
+            "received_at": _format_received_iso(candidate.created_at) if candidate.created_at else "",
             "body_text": candidate.summary or "No email body text available."
         }
 
@@ -527,7 +537,7 @@ def get_candidate_email_preview(candidate_id: int, db: Session = Depends(get_db)
         "subject": email_msg.subject,
         "sender": email_msg.sender,
         "recipient": email_msg.recipient or "Me",
-        "received_at": email_msg.received_at.strftime("%d %b %Y, %H:%M") if email_msg.received_at else "",
+        "received_at": _format_received_iso(email_msg.received_at) if email_msg.received_at else "",
         "body_text": email_msg.body_text,
         "body_html": getattr(email_msg, "body_html", None)
     }
@@ -589,7 +599,7 @@ def prepare_task_with_ai(
         out.recipient = email_msg.recipient
         out.subject = email_msg.subject
         if email_msg.received_at:
-            out.received_at = email_msg.received_at.strftime("%d %b %Y, %H:%M")
+            out.received_at = _format_received_iso(email_msg.received_at)
     return out
 
 @router.post("/candidates/{candidate_id}/create-task")

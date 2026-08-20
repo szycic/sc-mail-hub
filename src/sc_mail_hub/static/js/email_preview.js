@@ -16,7 +16,7 @@ async function previewEmail(candidateId) {
 
     if (subjEl) subjEl.textContent = data.subject || "No Subject";
     if (senderEl) senderEl.textContent = data.sender || "Unknown Sender";
-    if (dateEl) dateEl.textContent = data.received_at || "";
+    if (dateEl) dateEl.textContent = data.received_at ? formatDateTime(data.received_at) : "";
     if (bodyEl) bodyEl.textContent = data.body_text || "No email body text available.";
 
     const modal = document.getElementById("email-preview-modal");

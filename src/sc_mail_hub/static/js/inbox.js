@@ -826,7 +826,7 @@ function renderCandidates(candidates) {
           ${c.sender ? `<div>📧 From: <strong>${escapeHtml(c.sender)}</strong></div>` : ''}
           ${c.recipient ? `<div>📥 To: <strong>${escapeHtml(c.recipient)}</strong></div>` : ''}
           ${c.subject ? `<div>✉️ Subject: <i>"${escapeHtml(c.subject)}"</i></div>` : ''}
-          ${c.received_at ? `<div>📩 Received: <strong>${escapeHtml(c.received_at)}</strong></div>` : ''}
+          ${c.received_at ? `<div>📩 Received: <strong>${escapeHtml(formatDateTime(c.received_at))}</strong></div>` : ''}
           ${(c.updated_at || c.created_at) ? `<div>🔄 Updated: <strong>${escapeHtml(formatDateTime(c.updated_at || c.created_at))}</strong></div>` : ''}
         </div>
 
