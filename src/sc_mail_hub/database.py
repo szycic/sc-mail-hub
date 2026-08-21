@@ -72,6 +72,7 @@ def init_db():
             "ALTER TABLE system_settings ADD COLUMN vapid_claims_sub VARCHAR(255) DEFAULT 'mailto:admin@sc-mail-hub.local'",
             "ALTER TABLE system_settings ADD COLUMN daily_ingested_count INTEGER DEFAULT 0",
             "ALTER TABLE system_settings ADD COLUMN daily_ingested_date VARCHAR(10)",
+            "ALTER TABLE system_settings ADD COLUMN received_at_utc_migrated BOOLEAN DEFAULT 0",
         ]
         for sql in migrations:
             try:
@@ -87,6 +88,31 @@ def init_db():
                 "WHERE account_email IS NULL AND account_id IS NOT NULL"
             ))
             conn.commit()
+        except Exception:
+            pass
+
+        try:
+            res = conn.execute(text("SELECT received_at_utc_migrated FROM system_settings LIMIT 1")).fetchone()
+            if not res or not res[0]:
+                from datetime import datetime, timezone
+                local_tz = datetime.now().astimezone().tzinfo
+                if local_tz:
+                    msgs = conn.execute(text("SELECT id, received_at FROM email_messages WHERE received_at IS NOT NULL")).fetchall()
+                    for msg_id, r_at_val in msgs:
+                        if r_at_val:
+                            try:
+                                if isinstance(r_at_val, str):
+                                    clean_str = r_at_val.replace("T", " ")
+                                    dt = datetime.fromisoformat(clean_str)
+                                else:
+                                    dt = r_at_val
+                                if dt and dt.tzinfo is None:
+                                    utc_dt = dt.replace(tzinfo=local_tz).astimezone(timezone.utc).replace(tzinfo=None)
+                                    conn.execute(text("UPDATE email_messages SET received_at = :utc_dt WHERE id = :mid"), {"utc_dt": utc_dt.strftime("%Y-%m-%d %H:%M:%S"), "mid": msg_id})
+                            except Exception:
+                                pass
+                conn.execute(text("UPDATE system_settings SET received_at_utc_migrated = 1"))
+                conn.commit()
         except Exception:
             pass
 

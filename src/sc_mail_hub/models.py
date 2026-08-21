@@ -142,6 +142,7 @@ class SystemSettings(Base):
     # Persistent Daily IMAP Activity Tracking
     daily_ingested_count: Any = Column(Integer, default=0)
     daily_ingested_date: Any = Column(String(10), nullable=True)
+    received_at_utc_migrated: Any = Column(Boolean, default=False)
 
     updated_at: Any = Column(DateTime, default=_utc_now, onupdate=_utc_now)
 
