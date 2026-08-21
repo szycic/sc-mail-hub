@@ -337,7 +337,12 @@ class EmailService:
                                 received_dt = None
                                 if date_header:
                                     try:
-                                        received_dt = email.utils.parsedate_to_datetime(date_header)
+                                        parsed_dt = email.utils.parsedate_to_datetime(date_header)
+                                        if parsed_dt:
+                                            if parsed_dt.tzinfo is not None:
+                                                received_dt = parsed_dt.astimezone(timezone.utc)
+                                            else:
+                                                received_dt = parsed_dt.replace(tzinfo=timezone.utc)
                                     except Exception:
                                         pass
                                 if not received_dt:
@@ -360,8 +365,11 @@ class EmailService:
                                     db.add(email_record)
                                     fetched_messages.append(email_record)
                                     logger.info(f"  📥 [IMAP] Downloaded email ID={msg_id} | Subject='{subject}' | From='{sender}'")
-                                elif existing.account_id == account.id and not existing.email_uid:
-                                    existing.email_uid = extracted_uid or max_seen_uid
+                                else:
+                                    if existing.account_id == account.id and not existing.email_uid:
+                                        existing.email_uid = extracted_uid or max_seen_uid
+                                    if received_dt:
+                                        existing.received_at = received_dt
             else:
                 logger.info(f"ℹ️ [IMAP] No new messages found for {account.email_address}")
 

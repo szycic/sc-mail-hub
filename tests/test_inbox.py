@@ -61,6 +61,15 @@ def test_inbox_stats_endpoint():
     assert "PENDING" in data["counts"]
 
 
+def test_imap_date_header_utc_conversion():
+    import email.utils
+    from datetime import timezone
+    parsed_dt = email.utils.parsedate_to_datetime("Fri, 21 Aug 2026 08:15:00 +0200")
+    utc_dt = parsed_dt.astimezone(timezone.utc)
+    assert utc_dt.hour == 6
+    assert utc_dt.minute == 15
+
+
 def test_sync_updates_websocket():
     with client.websocket_connect("/api/inbox/ws/sync-updates") as websocket:
         data = websocket.receive_json()
