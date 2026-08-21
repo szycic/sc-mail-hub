@@ -71,7 +71,8 @@ async function loadAdminSettings() {
 
 async function loadSyncHealthStats() {
   try {
-    const res = await fetch("/api/admin/sync-health");
+    const tzOffset = new Date().getTimezoneOffset();
+    const res = await fetch(`/api/admin/sync-health?tz_offset=${tzOffset}`);
     if (!res.ok) return;
     const data = await res.json();
 
@@ -125,7 +126,8 @@ async function loadSyncChartData() {
   if (!barsEl || !labelsEl) return;
 
   try {
-    const res = await fetch("/api/admin/sync-chart-data");
+    const tzOffset = new Date().getTimezoneOffset();
+    const res = await fetch(`/api/admin/sync-chart-data?tz_offset=${tzOffset}`);
     if (!res.ok) return;
     const data = await res.json();
     window.currentSyncChartData = data;

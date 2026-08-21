@@ -140,12 +140,16 @@ class EmailService:
                 pass
 
     @classmethod
-    def get_sync_health_stats(cls, db: Session) -> Dict[str, Any]:
-        """Compute live IMAP sync health metrics including today's total ingested emails."""
-        today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).replace(tzinfo=None)
-        today_db_count = db.query(EmailMessage).filter(EmailMessage.received_at >= today_start).count()
+    def get_sync_health_stats(cls, db: Session, tz_offset: int = 0) -> Dict[str, Any]:
+        """Compute live IMAP sync health metrics including today's total ingested emails in user local time."""
+        now_utc = datetime.now(timezone.utc)
+        now_local = now_utc - timedelta(minutes=tz_offset)
+        today_local_start = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+        today_utc_start = (today_local_start + timedelta(minutes=tz_offset)).replace(tzinfo=None)
 
+        today_db_count = db.query(EmailMessage).filter(EmailMessage.received_at >= today_utc_start).count()
+
+        today_str = now_local.strftime("%Y-%m-%d")
         persisted_today = 0
         try:
             from sc_mail_hub.api.admin import get_or_create_system_settings

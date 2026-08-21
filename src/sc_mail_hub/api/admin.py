@@ -83,29 +83,34 @@ def update_admin_settings(payload: SystemSettingsUpdate, db: Session = Depends(g
 
 
 @router.get("/sync-health")
-def get_sync_health_stats(db: Session = Depends(get_db)):
+def get_sync_health_stats(tz_offset: int = 0, db: Session = Depends(get_db)):
     """Fetch live IMAP sync health metrics and status indicators."""
     from sc_mail_hub.services.email_service import EmailService
-    return EmailService.get_sync_health_stats(db)
+    return EmailService.get_sync_health_stats(db, tz_offset=tz_offset)
 
 
 @router.get("/sync-chart-data")
-def get_sync_chart_data(db: Session = Depends(get_db)):
-    """Fetch 7-day email ingestion statistics broken down by connected IMAP email accounts."""
+def get_sync_chart_data(tz_offset: int = 0, db: Session = Depends(get_db)):
+    """Fetch 7-day email ingestion statistics broken down by connected IMAP email accounts in user local time."""
     from datetime import datetime, timedelta, timezone
     from sc_mail_hub.models import EmailAccount, EmailMessage
 
-    today = datetime.now(timezone.utc).date()
-    days = [today - timedelta(days=i) for i in range(6, -1, -1)]
+    now_utc = datetime.now(timezone.utc)
+    now_local = now_utc - timedelta(minutes=tz_offset)
+    today_local_date = now_local.date()
+
+    days = [today_local_date - timedelta(days=i) for i in range(6, -1, -1)]
     day_labels = [d.strftime("%b %d") for d in days]
     day_iso_strs = [d.strftime("%Y-%m-%d") for d in days]
 
     active_accounts = db.query(EmailAccount).all()
     active_emails = {acc.email_address: acc.name for acc in active_accounts}
 
-    start_dt = datetime.combine(days[0], datetime.min.time(), tzinfo=timezone.utc)
+    start_local_dt = datetime.combine(days[0], datetime.min.time())
+    start_utc_dt = start_local_dt + timedelta(minutes=tz_offset)
+
     messages = db.query(EmailMessage.account_email, EmailMessage.received_at).filter(
-        EmailMessage.received_at >= start_dt
+        EmailMessage.received_at >= start_utc_dt
     ).all()
 
     account_data: Dict[str, Dict[str, int]] = {}
@@ -118,7 +123,12 @@ def get_sync_chart_data(db: Session = Depends(get_db)):
     for acc_email, r_at in messages:
         if not r_at:
             continue
-        d_str = r_at.strftime("%Y-%m-%d")
+        if r_at.tzinfo is None:
+            r_at_utc = r_at.replace(tzinfo=timezone.utc)
+        else:
+            r_at_utc = r_at
+        r_at_local = r_at_utc - timedelta(minutes=tz_offset)
+        d_str = r_at_local.strftime("%Y-%m-%d")
         if d_str in day_iso_strs:
             target_key = acc_email if acc_email else "System"
             if target_key not in account_data:
