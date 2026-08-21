@@ -461,7 +461,7 @@ function handleCandidateKeyboardShortcuts(e) {
     return;
   }
 
-  if (e.key === "ArrowUp" || e.key === "j" || e.key === "J") {
+  if (e.key === "ArrowUp" || e.key === "k" || e.key === "K") {
     e.preventDefault();
     let currentIdx = focusedCandidateIndex;
     if (currentIdx < 0) currentIdx = 0;
@@ -493,7 +493,7 @@ function handleCandidateKeyboardShortcuts(e) {
     return;
   }
 
-  if (e.key === "ArrowDown" || e.key === "k" || e.key === "K") {
+  if (e.key === "ArrowDown" || e.key === "j" || e.key === "J") {
     e.preventDefault();
     let currentIdx = focusedCandidateIndex;
     if (currentIdx < 0) currentIdx = 0;
