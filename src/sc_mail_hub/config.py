@@ -20,7 +20,7 @@ class Settings:
     PORT: int = int(os.getenv("PORT", "8000"))
     IMAP_MAX_FETCH_PER_SYNC: int = int(os.getenv("IMAP_MAX_FETCH_PER_SYNC", "15"))
     IMAP_SOCKET_TIMEOUT_SECONDS: int = int(os.getenv("IMAP_SOCKET_TIMEOUT_SECONDS", "8"))
-    BASE_URL: str = os.getenv("BASE_URL", "http://localhost:8001")
+    BASE_URL: str = os.getenv("BASE_URL", "http://localhost:8000")
     
     # Default Notion credentials (if set in .env)
     NOTION_API_KEY: str = os.getenv("NOTION_API_KEY", "")
