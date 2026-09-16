@@ -3,6 +3,8 @@
 Provides endpoints to create, list, update, delete, and test auto-ignore rules for email ingestion.
 """
 
+import re
+import logging
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -18,6 +20,7 @@ from sc_mail_hub.schemas import (
 )
 from sc_mail_hub.services.rule_service import RuleService
 
+logger = logging.getLogger("sc_mail_hub.api.rules")
 router = APIRouter(prefix="/api/rules", tags=["Auto-Ignore Rules"])
 
 VALID_RULE_TYPES = {"sender_domain", "sender_contains", "subject_keyword", "subject_regex"}
@@ -26,7 +29,11 @@ VALID_RULE_TYPES = {"sender_domain", "sender_contains", "subject_keyword", "subj
 @router.get("", response_model=List[AutoIgnoreRuleOut])
 def list_rules(db: Session = Depends(get_db)):
     """List all auto-ignore rules ordered by ID in ascending order (lowest ID first)."""
-    return db.query(AutoIgnoreRule).order_by(AutoIgnoreRule.id.asc()).all()
+    try:
+        return db.query(AutoIgnoreRule).order_by(AutoIgnoreRule.id.asc()).all()
+    except Exception as err:
+        logger.error(f"Database error listing auto-ignore rules: {err}")
+        raise HTTPException(status_code=500, detail=f"Database error listing rules: {err}")
 
 
 
@@ -41,16 +48,30 @@ def create_rule(payload: AutoIgnoreRuleCreate, db: Session = Depends(get_db)):
     if not payload.pattern or not payload.pattern.strip():
         raise HTTPException(status_code=400, detail="Rule pattern cannot be empty.")
 
+    if payload.rule_type == "subject_regex":
+        try:
+            re.compile(payload.pattern.strip())
+        except re.error as err:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid regular expression: {err}"
+            )
+
     rule = AutoIgnoreRule(
         name=payload.name.strip(),
         rule_type=payload.rule_type,
         pattern=payload.pattern.strip(),
         is_active=payload.is_active
     )
-    db.add(rule)
-    db.commit()
-    db.refresh(rule)
-    return rule
+    try:
+        db.add(rule)
+        db.commit()
+        db.refresh(rule)
+        return rule
+    except Exception as err:
+        db.rollback()
+        logger.error(f"Database error creating auto-ignore rule: {err}")
+        raise HTTPException(status_code=500, detail=f"Database error creating rule: {err}")
 
 
 @router.put("/{rule_id}", response_model=AutoIgnoreRuleOut)
@@ -60,28 +81,47 @@ def update_rule(rule_id: int, payload: AutoIgnoreRuleUpdate, db: Session = Depen
     if not rule:
         raise HTTPException(status_code=404, detail="Auto-ignore rule not found.")
 
-    if payload.rule_type is not None:
-        if payload.rule_type not in VALID_RULE_TYPES:
+    target_rule_type = payload.rule_type if payload.rule_type is not None else rule.rule_type
+    target_pattern = payload.pattern.strip() if payload.pattern is not None else rule.pattern
+
+    if target_rule_type not in VALID_RULE_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid rule_type '{target_rule_type}'. Valid options are: {', '.join(sorted(VALID_RULE_TYPES))}"
+        )
+
+    if not target_pattern:
+        raise HTTPException(status_code=400, detail="Rule pattern cannot be empty.")
+
+    if target_rule_type == "subject_regex":
+        try:
+            re.compile(target_pattern)
+        except re.error as err:
             raise HTTPException(
                 status_code=400,
-                detail=f"Invalid rule_type '{payload.rule_type}'. Valid options are: {', '.join(sorted(VALID_RULE_TYPES))}"
+                detail=f"Invalid regular expression: {err}"
             )
+
+    if payload.rule_type is not None:
         rule.rule_type = payload.rule_type
 
     if payload.name is not None:
         rule.name = payload.name.strip()
 
     if payload.pattern is not None:
-        if not payload.pattern.strip():
-            raise HTTPException(status_code=400, detail="Rule pattern cannot be empty.")
         rule.pattern = payload.pattern.strip()
 
     if payload.is_active is not None:
         rule.is_active = payload.is_active
 
-    db.commit()
-    db.refresh(rule)
-    return rule
+    try:
+        db.commit()
+        db.refresh(rule)
+        return rule
+    except Exception as err:
+        db.rollback()
+        logger.error(f"Database error updating auto-ignore rule: {err}")
+        raise HTTPException(status_code=500, detail=f"Database error updating rule: {err}")
 
 
 @router.delete("/all")

@@ -57,6 +57,11 @@ function escapeHtml(str) {
     .replace(/'/g, "&#039;");
 }
 
+function escapeRegex(str) {
+  if (!str) return '';
+  return String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function parseUtcDate(dateInput) {
   if (!dateInput) return null;
   if (dateInput instanceof Date) {

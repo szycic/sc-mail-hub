@@ -225,4 +225,38 @@ def test_apply_rules_retroactively():
         db2.close()
 
 
+def test_subject_regex_validation():
+    """Test validating subject regular expression pattern on creation and update."""
+    # 1. Reject invalid regex pattern
+    invalid_payload = {
+        "name": "Invalid Regex Rule",
+        "rule_type": "subject_regex",
+        "pattern": "([NW#176722 Zapytani",  # Unclosed parenthesis
+        "is_active": True
+    }
+    res_bad = client.post("/api/rules", json=invalid_payload)
+    assert res_bad.status_code == 400
+    assert "Invalid regular expression" in res_bad.json()["detail"]
+
+    # 2. Accept valid escaped regex pattern
+    valid_payload = {
+        "name": "Valid Escaped Regex Rule",
+        "rule_type": "subject_regex",
+        "pattern": r"\[NW#176722\] Zapytani",
+        "is_active": True
+    }
+    res_ok = client.post("/api/rules", json=valid_payload)
+    assert res_ok.status_code == 201
+    rule_id = res_ok.json()["id"]
+
+    # 3. Reject update with invalid regex
+    res_update_bad = client.put(f"/api/rules/{rule_id}", json={"pattern": "[unclosed bracket"})
+    assert res_update_bad.status_code == 400
+    assert "Invalid regular expression" in res_update_bad.json()["detail"]
+
+    # 4. Clean up
+    client.delete(f"/api/rules/{rule_id}")
+
+
+
 

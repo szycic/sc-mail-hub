@@ -355,15 +355,18 @@ async function addAutoIgnoreRule(event) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload)
     });
-    const data = await res.json();
+    let data = null;
+    try {
+      data = await res.json();
+    } catch (e) { }
 
-    if (res.ok) {
+    if (res.ok && data) {
       showToast(`Rule '${data.name}' created successfully!`, "success");
       if (nameInput) nameInput.value = "";
       if (patternInput) patternInput.value = "";
       await loadAutoIgnoreRules();
     } else {
-      showToast(data.detail || "Failed to create rule.", "error");
+      showToast((data && data.detail) || `Failed to create rule (HTTP ${res.status}).`, "error");
     }
   } catch (err) {
     showToast(`Error creating rule: ${err.message}`, "error");

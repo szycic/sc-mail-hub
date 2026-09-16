@@ -1483,8 +1483,9 @@ function onQuickRuleTypeChange() {
     patternInput.value = kw.toLowerCase();
     nameInput.value = `Auto-Ignore subject: ${kw}`;
   } else if (ruleType === "subject_regex") {
-    patternInput.value = subject ? `(${subject.slice(0, 20)})` : ".*";
-    nameInput.value = `Auto-Ignore regex rule`;
+    const rawSnippet = subject ? subject.slice(0, 30).trim() : "";
+    patternInput.value = rawSnippet ? (typeof escapeRegex === "function" ? escapeRegex(rawSnippet) : rawSnippet.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) : ".*";
+    nameInput.value = rawSnippet ? `Auto-Ignore regex: ${rawSnippet.slice(0, 40)}` : `Auto-Ignore regex rule`;
   }
 }
 
@@ -1532,17 +1533,28 @@ async function submitQuickRule() {
       })
     });
 
-    const data = await res.json();
+    let data = null;
+    try {
+      data = await res.json();
+    } catch (e) {
+      // Response was not JSON (e.g. 500 plain text or HTML error)
+    }
+
     if (!res.ok) {
-      throw new Error(data.detail || "Failed to create auto-ignore rule");
+      throw new Error((data && data.detail) || `Server error (${res.status}): ${res.statusText || "Failed to create auto-ignore rule"}`);
     }
 
     let applyMsg = "";
     if (applyRetroactive) {
       const applyRes = await fetch("/api/rules/apply", { method: "POST" });
       if (applyRes.ok) {
-        const applyData = await applyRes.json();
-        applyMsg = ` ${applyData.ignored_count || 0} candidate(s) ignored retroactively.`;
+        let applyData = null;
+        try {
+          applyData = await applyRes.json();
+        } catch (e) { }
+        if (applyData && applyData.ignored_count !== undefined) {
+          applyMsg = ` ${applyData.ignored_count} candidate(s) ignored retroactively.`;
+        }
       }
     }
 
