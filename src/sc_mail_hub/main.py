@@ -184,6 +184,10 @@ def _run_email_sync() -> bool:
         EmailService.update_sync_stats(db=db, duration=duration, fetched_count=fetched_total, error=None)
         return True
     except Exception as err:
+        try:
+            db.rollback()
+        except Exception:
+            pass
         duration = time.time() - start_time
         logger.error(f"Background email sync error: {err}")
         EmailService.update_sync_stats(db=db, duration=duration, fetched_count=fetched_total, error=str(err))

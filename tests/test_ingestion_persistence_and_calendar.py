@@ -63,6 +63,35 @@ def test_ingestion_stat_recording_and_persistence(db_session):
     assert stat.count == 5
 
 
+def test_batch_ingestion_in_same_transaction_no_conflict(db_session):
+    """Verify that multiple record_ingestion calls in the same transaction for the same hour do not raise UNIQUE constraint errors."""
+    account_email = "batch_test@example.com"
+    now = datetime(2026, 11, 8, 15, 30, 0, tzinfo=timezone.utc)
+
+    # Call record_ingestion 5 times in the same transaction without intermediate commits
+    for _ in range(5):
+        EmailService.record_ingestion(
+            db=db_session,
+            account_email=account_email,
+            received_at=now,
+            account_id=1,
+            count=1
+        )
+
+    # Commit should succeed cleanly without UNIQUE constraint failure
+    db_session.commit()
+
+    stat = db_session.query(IngestionStat).filter_by(
+        date_str="2026-11-08",
+        hour_utc=15,
+        account_email=account_email
+    ).first()
+
+    assert stat is not None
+    assert stat.count == 5
+
+
+
 def test_purge_ignored_preserves_chart_and_stats(db_session):
     """Verify that purging ignored candidates deletes raw messages but preserves 7-day chart counts."""
     # Ensure system settings exist

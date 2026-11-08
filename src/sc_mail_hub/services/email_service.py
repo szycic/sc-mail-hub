@@ -151,7 +151,6 @@ class EmailService:
         """Record permanent email ingestion telemetry per account, surviving candidate/email purges."""
         if not account_email:
             return
-        from sc_mail_hub.models import IngestionStat
 
         if not received_at:
             received_at = datetime.now(timezone.utc)
@@ -162,25 +161,23 @@ class EmailService:
         hour_utc = received_at.hour
 
         try:
-            stat = db.query(IngestionStat).filter(
-                IngestionStat.date_str == date_str,
-                IngestionStat.hour_utc == hour_utc,
-                IngestionStat.account_email == account_email
-            ).first()
-
-            if stat:
-                stat.count = (stat.count or 0) + count
-                if account_id and not stat.account_id:
-                    stat.account_id = account_id
-            else:
-                stat = IngestionStat(
-                    date_str=date_str,
-                    hour_utc=hour_utc,
-                    account_id=account_id,
-                    account_email=account_email,
-                    count=count
-                )
-                db.add(stat)
+            from sqlalchemy import text
+            db.execute(
+                text("""
+                    INSERT INTO ingestion_stats (date_str, hour_utc, account_id, account_email, count)
+                    VALUES (:date_str, :hour_utc, :account_id, :account_email, :count)
+                    ON CONFLICT(date_str, hour_utc, account_email) DO UPDATE SET
+                        count = ingestion_stats.count + excluded.count,
+                        account_id = COALESCE(ingestion_stats.account_id, excluded.account_id)
+                """),
+                {
+                    "date_str": date_str,
+                    "hour_utc": hour_utc,
+                    "account_id": account_id,
+                    "account_email": account_email,
+                    "count": count
+                }
+            )
         except Exception as err:
             logger.warning(f"Failed to record ingestion stat: {err}")
 
@@ -461,6 +458,10 @@ class EmailService:
             db.commit()
             logger.info(f"🎉 [IMAP] Sync complete for {account.email_address}: {len(fetched_messages)} new message(s) saved. last_uid={account.last_uid}")
         except Exception as err:
+            try:
+                db.rollback()
+            except Exception:
+                pass
             logger.error(f"❌ [IMAP ERROR] Exception fetching emails for {account.email_address}: {err}", exc_info=True)
         finally:
             if mail:
