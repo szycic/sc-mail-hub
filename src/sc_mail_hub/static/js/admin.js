@@ -160,7 +160,7 @@ function switchIngestionView(viewType) {
       btnCal.classList.add("btn-primary", "active");
     }
     if (headingEl) {
-      headingEl.innerHTML = `📅 Ingestion Calendar <span style="font-size:11px; font-weight:400; color:var(--text-dim); margin-left:4px;">• Hover or tap days for breakdown</span>`;
+      headingEl.innerHTML = `📅 Email Volume Calendar <span style="font-size:11px; font-weight:400; color:var(--text-dim); margin-left:4px;">• Hover or tap days for breakdown</span>`;
     }
     if (window.currentCalendarData) {
       renderIngestionCalendar(window.currentCalendarData);
@@ -179,7 +179,7 @@ function switchIngestionView(viewType) {
       btnCal.classList.add("btn-ghost");
     }
     if (headingEl) {
-      headingEl.innerHTML = `📈 7-Day Ingestion Chart <span style="font-size:11px; font-weight:400; color:var(--text-dim); margin-left:4px;">• Hover or tap bars for breakdown</span>`;
+      headingEl.innerHTML = `📈 7-Day Email Volume <span style="font-size:11px; font-weight:400; color:var(--text-dim); margin-left:4px;">• Hover or tap bars for breakdown</span>`;
     }
     if (window.currentSyncChartData) {
       renderSyncChartData(window.currentSyncChartData);
@@ -192,7 +192,7 @@ function switchIngestionView(viewType) {
 async function loadIngestionCalendar(year, month) {
   const gridEl = document.getElementById("ingestion-calendar-grid");
   if (gridEl && !window.currentCalendarData) {
-    gridEl.innerHTML = `<div style="grid-column:1/-1; padding:24px; text-align:center; color:var(--text-dim); font-size:12px;">Loading ingestion calendar...</div>`;
+    gridEl.innerHTML = `<div style="grid-column:1/-1; padding:24px; text-align:center; color:var(--text-dim); font-size:12px;">Loading email volume calendar...</div>`;
   }
   try {
     const tzOffset = new Date().getTimezoneOffset();
@@ -329,7 +329,7 @@ function renderPickerMonthsGrid() {
     if (hasData) classes.push("has-data");
 
     return `
-      <button type="button" class="${classes.join(' ')}" onclick="selectMonthFromPicker(${mNum})" title="${name} ${pickerViewingYear}${hasData ? ' (has ingestion data)' : ''}">
+      <button type="button" class="${classes.join(' ')}" onclick="selectMonthFromPicker(${mNum})" title="${name} ${pickerViewingYear}${hasData ? ' (has email data)' : ''}">
         ${name}
       </button>
     `;
@@ -452,7 +452,7 @@ function showCalendarDayPopover(cellEl, event, dateStr) {
 
   let itemsHtml = "";
   if (total === 0) {
-    itemsHtml = `<div style="color:var(--text-dim); font-size:11px; padding:4px 0;">No emails ingested on this day.</div>`;
+    itemsHtml = `<div style="color:var(--text-dim); font-size:11px; padding:4px 0;">No emails received on this day.</div>`;
   } else {
     itemsHtml = (data.series || []).map(s => {
       const count = byAccount[s.account_id] || 0;
