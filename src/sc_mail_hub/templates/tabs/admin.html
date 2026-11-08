@@ -45,30 +45,28 @@
     <!-- Ingestion Analytics Card (7-Day Chart & Monthly Calendar) -->
     <div
       style="margin-top:16px; background:rgba(255,255,255,0.02); padding:14px; border-radius:8px; border:1px solid rgba(255,255,255,0.06);">
+      
+      <!-- Top Bar: Heading + View Switcher -->
       <div
-        style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:12px;">
+        style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:10px;">
         <span id="ingestion-viz-heading"
           style="font-size:12px; font-weight:600; color:var(--text-main); display:flex; align-items:center; gap:6px;">
-          📈 Ingestion Analytics <span
-            style="font-size:11px; font-weight:400; color:var(--text-dim); margin-left:4px;">• Hover for
-            breakdown</span>
+          📈 7-Day Ingestion Chart <span
+            style="font-size:11px; font-weight:400; color:var(--text-dim); margin-left:4px;">• Hover or tap for breakdown</span>
         </span>
-        <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
-          <!-- Account Colors Legend -->
-          <div id="sync-chart-legend" style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; font-size:11px;">
-          </div>
-          <!-- View Switcher Toggle -->
-          <div style="display:inline-flex; background:rgba(0,0,0,0.3); border-radius:6px; padding:2px; border:1px solid rgba(255,255,255,0.1);">
-            <button type="button" id="btn-ingestion-view-chart" class="btn btn-sm btn-primary" onclick="switchIngestionView('chart')"
-              style="font-size:11px; padding:3px 10px; border-radius:4px;">
-              7-Day Bars
-            </button>
-            <button type="button" id="btn-ingestion-view-calendar" class="btn btn-sm btn-ghost" onclick="switchIngestionView('calendar')"
-              style="font-size:11px; padding:3px 10px; border-radius:4px;">
-              📅 Calendar
-            </button>
-          </div>
+        <!-- View Switcher Toggle -->
+        <div class="ingestion-view-toggle">
+          <button type="button" id="btn-ingestion-view-chart" class="btn btn-sm btn-primary ingestion-toggle-btn" onclick="switchIngestionView('chart')">
+            7-Day Bars
+          </button>
+          <button type="button" id="btn-ingestion-view-calendar" class="btn btn-sm btn-ghost ingestion-toggle-btn" onclick="switchIngestionView('calendar')">
+            📅 Calendar
+          </button>
         </div>
+      </div>
+
+      <!-- Account Colors Legend -->
+      <div id="sync-chart-legend" style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; font-size:11px; margin-bottom:12px; padding-bottom:6px; border-bottom:1px solid rgba(255,255,255,0.05);">
       </div>
 
       <!-- Floating Hover Popover Card with Arrow Caret (shared between chart & calendar) -->

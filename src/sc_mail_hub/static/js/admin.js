@@ -125,6 +125,8 @@ window.activeIngestionView = "chart";
 window.currentCalendarYear = null;
 window.currentCalendarMonth = null;
 window.currentCalendarData = null;
+window.currentSyncChartData = null;
+let activePopoverEl = null;
 
 function switchIngestionView(viewType) {
   window.activeIngestionView = viewType;
@@ -134,21 +136,25 @@ function switchIngestionView(viewType) {
   const btnCal = document.getElementById("btn-ingestion-view-calendar");
   const headingEl = document.getElementById("ingestion-viz-heading");
 
+  hideChartPopover();
+
   if (viewType === "calendar") {
     if (chartViewEl) chartViewEl.style.display = "none";
     if (calViewEl) calViewEl.style.display = "block";
     if (btnChart) {
-      btnChart.classList.remove("btn-primary");
+      btnChart.classList.remove("btn-primary", "active");
       btnChart.classList.add("btn-ghost");
     }
     if (btnCal) {
       btnCal.classList.remove("btn-ghost");
-      btnCal.classList.add("btn-primary");
+      btnCal.classList.add("btn-primary", "active");
     }
     if (headingEl) {
-      headingEl.innerHTML = `📅 Ingestion Calendar <span style="font-size:11px; font-weight:400; color:var(--text-dim); margin-left:4px;">• Hover days for breakdown</span>`;
+      headingEl.innerHTML = `📅 Ingestion Calendar <span style="font-size:11px; font-weight:400; color:var(--text-dim); margin-left:4px;">• Hover or tap days for breakdown</span>`;
     }
-    if (!window.currentCalendarData) {
+    if (window.currentCalendarData) {
+      renderIngestionCalendar(window.currentCalendarData);
+    } else {
       loadIngestionCalendar();
     }
   } else {
@@ -156,20 +162,28 @@ function switchIngestionView(viewType) {
     if (calViewEl) calViewEl.style.display = "none";
     if (btnChart) {
       btnChart.classList.remove("btn-ghost");
-      btnChart.classList.add("btn-primary");
+      btnChart.classList.add("btn-primary", "active");
     }
     if (btnCal) {
-      btnCal.classList.remove("btn-primary");
+      btnCal.classList.remove("btn-primary", "active");
       btnCal.classList.add("btn-ghost");
     }
     if (headingEl) {
-      headingEl.innerHTML = `📈 7-Day Ingestion Chart <span style="font-size:11px; font-weight:400; color:var(--text-dim); margin-left:4px;">• Hover bars for breakdown</span>`;
+      headingEl.innerHTML = `📈 7-Day Ingestion Chart <span style="font-size:11px; font-weight:400; color:var(--text-dim); margin-left:4px;">• Hover or tap bars for breakdown</span>`;
     }
-    loadSyncChartData();
+    if (window.currentSyncChartData) {
+      renderSyncChartData(window.currentSyncChartData);
+    } else {
+      loadSyncChartData();
+    }
   }
 }
 
 async function loadIngestionCalendar(year, month) {
+  const gridEl = document.getElementById("ingestion-calendar-grid");
+  if (gridEl && !window.currentCalendarData) {
+    gridEl.innerHTML = `<div style="grid-column:1/-1; padding:24px; text-align:center; color:var(--text-dim); font-size:12px;">Loading ingestion calendar...</div>`;
+  }
   try {
     const tzOffset = new Date().getTimezoneOffset();
     let url = `/api/admin/ingestion-calendar-data?tz_offset=${tzOffset}`;
@@ -186,6 +200,9 @@ async function loadIngestionCalendar(year, month) {
     renderIngestionCalendar(data);
   } catch (err) {
     console.error("Error loading ingestion calendar:", err);
+    if (gridEl) {
+      gridEl.innerHTML = `<div style="grid-column:1/-1; padding:24px; text-align:center; color:#ef4444; font-size:12px;">Failed to load calendar data.</div>`;
+    }
   }
 }
 
@@ -300,6 +317,7 @@ function renderIngestionCalendar(data) {
     html += `
       <div class="ingestion-cal-day ${densityClass} ${hasDataClass} ${todayClass}"
            data-date="${dStr}"
+           onclick="toggleCalendarDayPopover(this, event, '${dStr}')"
            onmouseenter="showCalendarDayPopover(this, event, '${dStr}')"
            onmousemove="updateChartPopoverPos(this, event)"
            onmouseleave="hideChartPopover()">
@@ -317,6 +335,7 @@ function showCalendarDayPopover(cellEl, event, dateStr) {
   const bodyEl = document.getElementById("sync-chart-popover-body");
   if (!popoverEl || !bodyEl || !window.currentCalendarData) return;
 
+  activePopoverEl = cellEl;
   const data = window.currentCalendarData;
   const dayData = (data.daily_counts && data.daily_counts[dateStr]) || { total: 0, by_account: {} };
   const total = dayData.total || 0;
@@ -367,84 +386,100 @@ function showCalendarDayPopover(cellEl, event, dateStr) {
   updateChartPopoverPos(cellEl, event);
 }
 
+function toggleCalendarDayPopover(cellEl, event, dateStr) {
+  if (event) {
+    event.stopPropagation();
+    event.preventDefault();
+  }
+  const popoverEl = document.getElementById("sync-chart-popover");
+  if (popoverEl && popoverEl.style.display === "block" && activePopoverEl === cellEl) {
+    hideChartPopover();
+  } else {
+    showCalendarDayPopover(cellEl, event, dateStr);
+  }
+}
+
 
 window.currentSyncChartData = null;
 
-async function loadSyncChartData() {
+function renderSyncChartData(data) {
   const legendEl = document.getElementById("sync-chart-legend");
   const barsEl = document.getElementById("sync-chart-bars-container");
   const labelsEl = document.getElementById("sync-chart-labels-container");
-  if (!barsEl || !labelsEl) return;
+  if (!barsEl || !labelsEl || !data) return;
 
+  const days = data.days || [];
+  const series = data.series || [];
+
+  if (legendEl) {
+    if (series.length === 0) {
+      legendEl.innerHTML = `<span style="color:var(--text-dim);">No active accounts</span>`;
+    } else {
+      legendEl.innerHTML = series.map(s => `
+        <span style="display:inline-flex; align-items:center; gap:5px; color:var(--text-main);">
+          <span style="width:8px; height:8px; border-radius:50%; background:${s.color}; display:inline-block;"></span>
+          ${escapeHtml(s.account_name)}
+        </span>
+      `).join("");
+    }
+  }
+
+  const dayTotals = days.map((_, dayIdx) => {
+    return series.reduce((sum, s) => sum + (s.counts[dayIdx] || 0), 0);
+  });
+  const maxVal = Math.max(...dayTotals, 1);
+
+  barsEl.innerHTML = days.map((dayLabel, dayIdx) => {
+    const total = dayTotals[dayIdx];
+
+    const breakdownText = series.map(s => {
+      const val = s.counts[dayIdx] || 0;
+      return `${s.account_name}: ${val}`;
+    }).join(" | ");
+
+    const segmentsHtml = series.map(s => {
+      const val = s.counts[dayIdx] || 0;
+      if (val === 0) return "";
+      const pct = ((val / total) * 100).toFixed(1);
+      return `
+        <div class="chart-segment"
+             data-acc="${escapeHtml(s.account_name)}"
+             style="height:${pct}%; background:${s.color}; width:100%; transition:all 0.2s ease; cursor:pointer;">
+        </div>
+      `;
+    }).join("");
+
+    const heightPct = Math.max(Math.round((total / maxVal) * 100), total > 0 ? 8 : 4);
+
+    return `
+      <div class="chart-bar-column"
+           style="flex:1; display:flex; flex-direction:column; align-items:center; height:100%; justify-content:flex-end;">
+        <span style="font-size:9px; color:var(--text-dim); margin-bottom:2px; opacity:${total > 0 ? '1' : '0.4'}; font-weight:600;">${total}</span>
+        <div class="chart-bar-pill"
+             onclick="toggleChartPopover(this, event, ${dayIdx})"
+             onmouseenter="this.style.filter='brightness(1.25)'; this.style.boxShadow='0 0 10px rgba(59,130,246,0.4)'; showChartPopover(this, event, ${dayIdx})"
+             onmousemove="updateChartPopoverPos(this, event)"
+             onmouseleave="this.style.filter='none'; this.style.boxShadow='none'; hideChartPopover()"
+             style="width:75%; max-width:28px; height:${heightPct}%; background:rgba(255,255,255,0.04); border-radius:4px 4px 0 0; display:flex; flex-direction:column-reverse; overflow:hidden; border:1px solid rgba(255,255,255,0.08); cursor:pointer; transition:all 0.15s ease;">
+          ${segmentsHtml}
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  labelsEl.innerHTML = days.map(dayLabel => `
+    <div style="flex:1;">${escapeHtml(dayLabel)}</div>
+  `).join("");
+}
+
+async function loadSyncChartData() {
   try {
     const tzOffset = new Date().getTimezoneOffset();
     const res = await fetch(`/api/admin/sync-chart-data?tz_offset=${tzOffset}`);
     if (!res.ok) return;
     const data = await res.json();
     window.currentSyncChartData = data;
-
-    const days = data.days || [];
-    const series = data.series || [];
-
-    if (legendEl) {
-      if (series.length === 0) {
-        legendEl.innerHTML = `<span style="color:var(--text-dim);">No active accounts</span>`;
-      } else {
-        legendEl.innerHTML = series.map(s => `
-          <span style="display:inline-flex; align-items:center; gap:5px; color:var(--text-main);">
-            <span style="width:8px; height:8px; border-radius:50%; background:${s.color}; display:inline-block;"></span>
-            ${escapeHtml(s.account_name)}
-          </span>
-        `).join("");
-      }
-    }
-
-    const dayTotals = days.map((_, dayIdx) => {
-      return series.reduce((sum, s) => sum + (s.counts[dayIdx] || 0), 0);
-    });
-    const maxVal = Math.max(...dayTotals, 1);
-
-    barsEl.innerHTML = days.map((dayLabel, dayIdx) => {
-      const total = dayTotals[dayIdx];
-
-      const breakdownText = series.map(s => {
-        const val = s.counts[dayIdx] || 0;
-        return `${s.account_name}: ${val}`;
-      }).join(" | ");
-
-      const segmentsHtml = series.map(s => {
-        const val = s.counts[dayIdx] || 0;
-        if (val === 0) return "";
-        const pct = ((val / total) * 100).toFixed(1);
-        return `
-          <div class="chart-segment"
-               data-acc="${escapeHtml(s.account_name)}"
-               style="height:${pct}%; background:${s.color}; width:100%; transition:all 0.2s ease; cursor:default;">
-          </div>
-        `;
-      }).join("");
-
-      const heightPct = Math.max(Math.round((total / maxVal) * 100), total > 0 ? 8 : 4);
-
-      return `
-        <div class="chart-bar-column"
-             style="flex:1; display:flex; flex-direction:column; align-items:center; height:100%; justify-content:flex-end;">
-          <span style="font-size:9px; color:var(--text-dim); margin-bottom:2px; opacity:${total > 0 ? '1' : '0.4'}; font-weight:600;">${total}</span>
-          <div class="chart-bar-pill"
-               onmouseenter="this.style.filter='brightness(1.25)'; this.style.boxShadow='0 0 10px rgba(59,130,246,0.4)'; showChartPopover(this, event, ${dayIdx})"
-               onmousemove="updateChartPopoverPos(this, event)"
-               onmouseleave="this.style.filter='none'; this.style.boxShadow='none'; hideChartPopover()"
-               style="width:75%; max-width:28px; height:${heightPct}%; background:rgba(255,255,255,0.04); border-radius:4px 4px 0 0; display:flex; flex-direction:column-reverse; overflow:hidden; border:1px solid rgba(255,255,255,0.08); cursor:default; transition:all 0.15s ease;">
-            ${segmentsHtml}
-          </div>
-        </div>
-      `;
-    }).join("");
-
-    labelsEl.innerHTML = days.map(dayLabel => `
-      <div style="flex:1;">${escapeHtml(dayLabel)}</div>
-    `).join("");
-
+    renderSyncChartData(data);
   } catch (err) {
     console.error("Error loading sync chart data:", err);
   }
@@ -455,6 +490,7 @@ function showChartPopover(pillEl, event, dayIdx) {
   const bodyEl = document.getElementById("sync-chart-popover-body");
   if (!popoverEl || !bodyEl || !window.currentSyncChartData) return;
 
+  activePopoverEl = pillEl;
   const data = window.currentSyncChartData;
   const dayLabel = data.days[dayIdx] || "";
   const series = data.series || [];
@@ -486,6 +522,19 @@ function showChartPopover(pillEl, event, dayIdx) {
 
   popoverEl.style.display = "block";
   updateChartPopoverPos(pillEl, event);
+}
+
+function toggleChartPopover(pillEl, event, dayIdx) {
+  if (event) {
+    event.stopPropagation();
+    event.preventDefault();
+  }
+  const popoverEl = document.getElementById("sync-chart-popover");
+  if (popoverEl && popoverEl.style.display === "block" && activePopoverEl === pillEl) {
+    hideChartPopover();
+  } else {
+    showChartPopover(pillEl, event, dayIdx);
+  }
 }
 
 function updateChartPopoverPos(pillEl, event) {
@@ -530,7 +579,15 @@ function hideChartPopover() {
   const popoverEl = document.getElementById("sync-chart-popover");
   if (!popoverEl) return;
   popoverEl.style.display = "none";
+  activePopoverEl = null;
 }
+
+// Dismiss popover when clicking or tapping outside of chart pills / calendar cells
+document.addEventListener("click", (e) => {
+  if (!e.target.closest(".chart-bar-pill") && !e.target.closest(".ingestion-cal-day") && !e.target.closest("#sync-chart-popover")) {
+    hideChartPopover();
+  }
+});
 
 async function loadAutoIgnoreRules() {
   const tbody = document.getElementById("rules-table-body");
@@ -1218,6 +1275,42 @@ async function resetSettingsToDefaults() {
     showToast(`Error resetting settings: ${err.message}`, "error");
   }
 }
+
+// Global button initialization & window exposure
+function initIngestionViewButtons() {
+  const btnChart = document.getElementById("btn-ingestion-view-chart");
+  const btnCal = document.getElementById("btn-ingestion-view-calendar");
+  if (btnChart && !btnChart._bound) {
+    btnChart._bound = true;
+    btnChart.addEventListener("click", () => switchIngestionView("chart"));
+  }
+  if (btnCal && !btnCal._bound) {
+    btnCal._bound = true;
+    btnCal.addEventListener("click", () => switchIngestionView("calendar"));
+  }
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", initIngestionViewButtons);
+} else {
+  initIngestionViewButtons();
+}
+
+// Explicit global exposure for inline onclick handlers and window access
+window.switchIngestionView = switchIngestionView;
+window.loadIngestionCalendar = loadIngestionCalendar;
+window.renderIngestionCalendar = renderIngestionCalendar;
+window.navCalendarMonth = navCalendarMonth;
+window.onCalendarMonthSelect = onCalendarMonthSelect;
+window.jumpCalendarToday = jumpCalendarToday;
+window.showCalendarDayPopover = showCalendarDayPopover;
+window.toggleCalendarDayPopover = toggleCalendarDayPopover;
+window.showChartPopover = showChartPopover;
+window.toggleChartPopover = toggleChartPopover;
+window.hideChartPopover = hideChartPopover;
+window.updateChartPopoverPos = updateChartPopoverPos;
+window.loadSyncChartData = loadSyncChartData;
+window.renderSyncChartData = renderSyncChartData;
 
 
 
