@@ -42,23 +42,36 @@
       </div>
     </div>
 
-    <!-- 7-Day Ingestion Chart (Split by Account) -->
+    <!-- Ingestion Analytics Card (7-Day Chart & Monthly Calendar) -->
     <div
       style="margin-top:16px; background:rgba(255,255,255,0.02); padding:14px; border-radius:8px; border:1px solid rgba(255,255,255,0.06);">
       <div
         style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:12px;">
-        <span
+        <span id="ingestion-viz-heading"
           style="font-size:12px; font-weight:600; color:var(--text-main); display:flex; align-items:center; gap:6px;">
-          📈 7-Day Ingestion Chart <span
-            style="font-size:11px; font-weight:400; color:var(--text-dim); margin-left:4px;">• Hover bars for
+          📈 Ingestion Analytics <span
+            style="font-size:11px; font-weight:400; color:var(--text-dim); margin-left:4px;">• Hover for
             breakdown</span>
         </span>
-        <!-- Account Colors Legend -->
-        <div id="sync-chart-legend" style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; font-size:11px;">
+        <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+          <!-- Account Colors Legend -->
+          <div id="sync-chart-legend" style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; font-size:11px;">
+          </div>
+          <!-- View Switcher Toggle -->
+          <div style="display:inline-flex; background:rgba(0,0,0,0.3); border-radius:6px; padding:2px; border:1px solid rgba(255,255,255,0.1);">
+            <button type="button" id="btn-ingestion-view-chart" class="btn btn-sm btn-primary" onclick="switchIngestionView('chart')"
+              style="font-size:11px; padding:3px 10px; border-radius:4px;">
+              7-Day Bars
+            </button>
+            <button type="button" id="btn-ingestion-view-calendar" class="btn btn-sm btn-ghost" onclick="switchIngestionView('calendar')"
+              style="font-size:11px; padding:3px 10px; border-radius:4px;">
+              📅 Calendar
+            </button>
+          </div>
         </div>
       </div>
 
-      <!-- Floating Hover Popover Card with Arrow Caret -->
+      <!-- Floating Hover Popover Card with Arrow Caret (shared between chart & calendar) -->
       <div id="sync-chart-popover"
         style="position:fixed; z-index:9999; pointer-events:none; background:rgba(15,23,42,0.95); backdrop-filter:blur(8px); border:1px solid rgba(255,255,255,0.15); border-radius:8px; padding:10px 14px; box-shadow:0 10px 25px rgba(0,0,0,0.5); display:none; font-size:11px; color:var(--text-main); white-space:nowrap; transition:opacity 0.15s ease;">
         <div id="sync-chart-popover-body"></div>
@@ -67,14 +80,57 @@
         </div>
       </div>
 
-      <!-- Bar Chart Flex Container -->
-      <div id="sync-chart-bars-container"
-        style="display:flex; align-items:flex-end; justify-content:space-between; gap:12px; height:100px; padding-top:10px; border-bottom:1px solid rgba(255,255,255,0.08);">
+      <!-- 7-Day Ingestion Bar Chart View -->
+      <div id="ingestion-chart-view">
+        <!-- Bar Chart Flex Container -->
+        <div id="sync-chart-bars-container"
+          style="display:flex; align-items:flex-end; justify-content:space-between; gap:12px; height:100px; padding-top:10px; border-bottom:1px solid rgba(255,255,255,0.08);">
+        </div>
+
+        <!-- Date Labels Row -->
+        <div id="sync-chart-labels-container"
+          style="display:flex; justify-content:space-between; gap:12px; margin-top:8px; font-size:10px; color:var(--text-dim); text-align:center;">
+        </div>
       </div>
 
-      <!-- Date Labels Row -->
-      <div id="sync-chart-labels-container"
-        style="display:flex; justify-content:space-between; gap:12px; margin-top:8px; font-size:10px; color:var(--text-dim); text-align:center;">
+      <!-- Monthly Ingestion Calendar View -->
+      <div id="ingestion-calendar-view" style="display:none;" class="ingestion-calendar-container">
+        <!-- Calendar Toolbar: Month Nav & Metrics -->
+        <div class="ingestion-cal-toolbar">
+          <div class="ingestion-cal-nav">
+            <button type="button" class="btn btn-outline btn-sm" onclick="navCalendarMonth(-1)"
+              style="padding:3px 8px; font-size:11px;" title="Previous Month">◀</button>
+            <span id="ingestion-cal-title" class="ingestion-cal-title">Loading...</span>
+            <button type="button" class="btn btn-outline btn-sm" onclick="navCalendarMonth(1)"
+              style="padding:3px 8px; font-size:11px;" title="Next Month">▶</button>
+            <select id="ingestion-cal-month-select" class="select-input" onchange="onCalendarMonthSelect(this.value)"
+              style="padding:2px 8px; font-size:11px; max-width:140px; margin-left:4px;">
+            </select>
+            <button type="button" class="btn btn-outline btn-sm" onclick="jumpCalendarToday()"
+              style="padding:3px 8px; font-size:11px; margin-left:4px;">Today</button>
+          </div>
+
+          <div class="ingestion-cal-metrics">
+            <span class="ingestion-cal-metric-badge">📬 Total: <strong id="cal-stat-month-total" style="color:#60a5fa;">0</strong></span>
+            <span class="ingestion-cal-metric-badge">📊 Daily Avg: <strong id="cal-stat-daily-avg" style="color:#34d399;">0.0</strong></span>
+            <span class="ingestion-cal-metric-badge">⚡ Peak: <strong id="cal-stat-peak-day" style="color:#fbbf24;">None</strong></span>
+          </div>
+        </div>
+
+        <!-- Calendar Weekday Header -->
+        <div class="ingestion-cal-grid-header">
+          <div>Mon</div>
+          <div>Tue</div>
+          <div>Wed</div>
+          <div>Thu</div>
+          <div>Fri</div>
+          <div>Sat</div>
+          <div>Sun</div>
+        </div>
+
+        <!-- Calendar Days Grid -->
+        <div id="ingestion-calendar-grid" class="ingestion-cal-grid">
+        </div>
       </div>
     </div>
   </div>

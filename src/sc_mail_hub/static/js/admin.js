@@ -111,11 +111,262 @@ async function loadSyncHealthStats() {
       }
     }
 
-    await loadSyncChartData();
+    if (window.activeIngestionView === "calendar") {
+      await loadIngestionCalendar(window.currentCalendarYear, window.currentCalendarMonth);
+    } else {
+      await loadSyncChartData();
+    }
   } catch (err) {
     console.error("Error loading sync health stats:", err);
   }
 }
+
+window.activeIngestionView = "chart";
+window.currentCalendarYear = null;
+window.currentCalendarMonth = null;
+window.currentCalendarData = null;
+
+function switchIngestionView(viewType) {
+  window.activeIngestionView = viewType;
+  const chartViewEl = document.getElementById("ingestion-chart-view");
+  const calViewEl = document.getElementById("ingestion-calendar-view");
+  const btnChart = document.getElementById("btn-ingestion-view-chart");
+  const btnCal = document.getElementById("btn-ingestion-view-calendar");
+  const headingEl = document.getElementById("ingestion-viz-heading");
+
+  if (viewType === "calendar") {
+    if (chartViewEl) chartViewEl.style.display = "none";
+    if (calViewEl) calViewEl.style.display = "block";
+    if (btnChart) {
+      btnChart.classList.remove("btn-primary");
+      btnChart.classList.add("btn-ghost");
+    }
+    if (btnCal) {
+      btnCal.classList.remove("btn-ghost");
+      btnCal.classList.add("btn-primary");
+    }
+    if (headingEl) {
+      headingEl.innerHTML = `📅 Ingestion Calendar <span style="font-size:11px; font-weight:400; color:var(--text-dim); margin-left:4px;">• Hover days for breakdown</span>`;
+    }
+    if (!window.currentCalendarData) {
+      loadIngestionCalendar();
+    }
+  } else {
+    if (chartViewEl) chartViewEl.style.display = "block";
+    if (calViewEl) calViewEl.style.display = "none";
+    if (btnChart) {
+      btnChart.classList.remove("btn-ghost");
+      btnChart.classList.add("btn-primary");
+    }
+    if (btnCal) {
+      btnCal.classList.remove("btn-primary");
+      btnCal.classList.add("btn-ghost");
+    }
+    if (headingEl) {
+      headingEl.innerHTML = `📈 7-Day Ingestion Chart <span style="font-size:11px; font-weight:400; color:var(--text-dim); margin-left:4px;">• Hover bars for breakdown</span>`;
+    }
+    loadSyncChartData();
+  }
+}
+
+async function loadIngestionCalendar(year, month) {
+  try {
+    const tzOffset = new Date().getTimezoneOffset();
+    let url = `/api/admin/ingestion-calendar-data?tz_offset=${tzOffset}`;
+    if (year && month) {
+      url += `&year=${year}&month=${month}`;
+    }
+    const res = await fetch(url);
+    if (!res.ok) return;
+    const data = await res.json();
+    window.currentCalendarData = data;
+    window.currentCalendarYear = data.year;
+    window.currentCalendarMonth = data.month;
+
+    renderIngestionCalendar(data);
+  } catch (err) {
+    console.error("Error loading ingestion calendar:", err);
+  }
+}
+
+function navCalendarMonth(delta) {
+  if (!window.currentCalendarYear || !window.currentCalendarMonth) {
+    const d = new Date();
+    window.currentCalendarYear = d.getFullYear();
+    window.currentCalendarMonth = d.getMonth() + 1;
+  }
+  let newMonth = window.currentCalendarMonth + delta;
+  let newYear = window.currentCalendarYear;
+  if (newMonth < 1) {
+    newMonth = 12;
+    newYear -= 1;
+  } else if (newMonth > 12) {
+    newMonth = 1;
+    newYear += 1;
+  }
+  loadIngestionCalendar(newYear, newMonth);
+}
+
+function onCalendarMonthSelect(value) {
+  if (!value) return;
+  const [y, m] = value.split("-").map(Number);
+  loadIngestionCalendar(y, m);
+}
+
+function jumpCalendarToday() {
+  const d = new Date();
+  loadIngestionCalendar(d.getFullYear(), d.getMonth() + 1);
+}
+
+function renderIngestionCalendar(data) {
+  const titleEl = document.getElementById("ingestion-cal-title");
+  if (titleEl) titleEl.textContent = data.month_name || `${data.year}-${data.month}`;
+
+  const selectEl = document.getElementById("ingestion-cal-month-select");
+  if (selectEl && data.available_months) {
+    const curVal = `${data.year}-${String(data.month).padStart(2, '0')}`;
+    selectEl.innerHTML = data.available_months.map(mStr => {
+      const [y, m] = mStr.split("-");
+      const d = new Date(Number(y), Number(m) - 1, 1);
+      const label = d.toLocaleString("default", { month: "short", year: "numeric" });
+      const sel = mStr === curVal ? "selected" : "";
+      return `<option value="${mStr}" ${sel}>${label}</option>`;
+    }).join("");
+  }
+
+  const totalEl = document.getElementById("cal-stat-month-total");
+  const avgEl = document.getElementById("cal-stat-daily-avg");
+  const peakEl = document.getElementById("cal-stat-peak-day");
+  if (totalEl) totalEl.textContent = `${data.month_total || 0} emails`;
+  if (avgEl) avgEl.textContent = `${data.daily_average || 0} / day`;
+  if (peakEl) {
+    if (data.peak_day && data.peak_day.count > 0) {
+      const d = new Date(data.peak_day.date + "T00:00:00");
+      const dStr = d.toLocaleDateString("default", { month: "short", day: "numeric" });
+      peakEl.textContent = `${dStr} (${data.peak_day.count})`;
+    } else {
+      peakEl.textContent = "None";
+    }
+  }
+
+  const legendEl = document.getElementById("sync-chart-legend");
+  if (legendEl && data.series && data.series.length > 0) {
+    legendEl.innerHTML = data.series.map(s => `
+      <span style="display:inline-flex; align-items:center; gap:5px; color:var(--text-main);">
+        <span style="width:8px; height:8px; border-radius:50%; background:${s.color}; display:inline-block;"></span>
+        ${escapeHtml(s.account_name)}
+      </span>
+    `).join("");
+  }
+
+  const gridEl = document.getElementById("ingestion-calendar-grid");
+  if (!gridEl) return;
+
+  const firstWeekday = data.first_weekday;
+  const numDays = data.days_in_month;
+  const dailyCounts = data.daily_counts || {};
+
+  let maxCount = 1;
+  Object.values(dailyCounts).forEach(d => {
+    if (d.total > maxCount) maxCount = d.total;
+  });
+
+  const now = new Date();
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
+  let html = "";
+  for (let i = 0; i < firstWeekday; i++) {
+    html += `<div class="ingestion-cal-day empty"></div>`;
+  }
+
+  for (let day = 1; day <= numDays; day++) {
+    const dStr = `${data.year}-${String(data.month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const dayData = dailyCounts[dStr] || { total: 0, by_account: {} };
+    const total = dayData.total || 0;
+    const isToday = dStr === todayStr;
+
+    let densityClass = "cal-density-0";
+    if (total > 0) {
+      const ratio = total / maxCount;
+      if (ratio <= 0.25) densityClass = "cal-density-1";
+      else if (ratio <= 0.5) densityClass = "cal-density-2";
+      else if (ratio <= 0.8) densityClass = "cal-density-3";
+      else densityClass = "cal-density-4";
+    }
+
+    const hasDataClass = total > 0 ? "has-data" : "";
+    const todayClass = isToday ? "today" : "";
+
+    html += `
+      <div class="ingestion-cal-day ${densityClass} ${hasDataClass} ${todayClass}"
+           data-date="${dStr}"
+           onmouseenter="showCalendarDayPopover(this, event, '${dStr}')"
+           onmousemove="updateChartPopoverPos(this, event)"
+           onmouseleave="hideChartPopover()">
+        <span class="ingestion-cal-day-num">${day}</span>
+        ${total > 0 ? `<span class="ingestion-cal-day-count">${total}</span>` : ""}
+      </div>
+    `;
+  }
+
+  gridEl.innerHTML = html;
+}
+
+function showCalendarDayPopover(cellEl, event, dateStr) {
+  const popoverEl = document.getElementById("sync-chart-popover");
+  const bodyEl = document.getElementById("sync-chart-popover-body");
+  if (!popoverEl || !bodyEl || !window.currentCalendarData) return;
+
+  const data = window.currentCalendarData;
+  const dayData = (data.daily_counts && data.daily_counts[dateStr]) || { total: 0, by_account: {} };
+  const total = dayData.total || 0;
+  const byAccount = dayData.by_account || {};
+
+  const d = new Date(dateStr + "T00:00:00");
+  const dateFormatted = d.toLocaleDateString("default", { weekday: "short", month: "short", day: "numeric", year: "numeric" });
+
+  let itemsHtml = "";
+  if (total === 0) {
+    itemsHtml = `<div style="color:var(--text-dim); font-size:11px; padding:4px 0;">No emails ingested on this day.</div>`;
+  } else {
+    itemsHtml = (data.series || []).map(s => {
+      const count = byAccount[s.account_id] || 0;
+      if (count === 0) return "";
+      return `
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:16px; padding:3px 6px; border-radius:4px;">
+          <span style="display:inline-flex; align-items:center; gap:6px;">
+            <span style="width:8px; height:8px; border-radius:50%; background:${s.color}; display:inline-block;"></span>
+            ${escapeHtml(s.account_name)}
+          </span>
+          <strong style="color:#60a5fa;">${count} email${count === 1 ? '' : 's'}</strong>
+        </div>
+      `;
+    }).join("");
+
+    if (!itemsHtml) {
+      itemsHtml = Object.entries(byAccount).map(([acc, cnt]) => `
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:16px; padding:3px 6px;">
+          <span>${escapeHtml(acc)}</span>
+          <strong style="color:#60a5fa;">${cnt} email${cnt === 1 ? '' : 's'}</strong>
+        </div>
+      `).join("");
+    }
+  }
+
+  bodyEl.innerHTML = `
+    <div style="font-weight:700; color:var(--text-main); margin-bottom:6px; font-size:12px; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:4px; display:flex; justify-content:space-between; align-items:center; gap:12px;">
+      <span>📅 ${escapeHtml(dateFormatted)}</span>
+      <span style="font-size:10px; color:var(--text-dim); font-weight:400;">Day Total: <strong>${total}</strong></span>
+    </div>
+    <div style="display:flex; flex-direction:column; gap:2px;">
+      ${itemsHtml}
+    </div>
+  `;
+
+  popoverEl.style.display = "block";
+  updateChartPopoverPos(cellEl, event);
+}
+
 
 window.currentSyncChartData = null;
 

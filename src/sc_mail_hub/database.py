@@ -116,6 +116,26 @@ def init_db():
         except Exception:
             pass
 
+        try:
+            stat_cnt = conn.execute(text("SELECT count(*) FROM ingestion_stats")).fetchone()
+            if not stat_cnt or stat_cnt[0] == 0:
+                conn.execute(text("""
+                    INSERT OR IGNORE INTO ingestion_stats (date_str, hour_utc, account_id, account_email, count)
+                    SELECT 
+                        strftime('%Y-%m-%d', received_at) as date_str,
+                        CAST(strftime('%H', received_at) as integer) as hour_utc,
+                        account_id,
+                        COALESCE(account_email, 'unknown') as account_email,
+                        count(*) as count
+                    FROM email_messages
+                    WHERE received_at IS NOT NULL
+                    GROUP BY strftime('%Y-%m-%d', received_at), CAST(strftime('%H', received_at) as integer), account_id, COALESCE(account_email, 'unknown')
+                """))
+                conn.commit()
+        except Exception:
+            pass
+
+
 
 def get_db():
     """FastAPI Dependency for obtaining a database session."""

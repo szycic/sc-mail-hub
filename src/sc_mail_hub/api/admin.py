@@ -4,7 +4,7 @@ Provides endpoints to view and update system-wide administrative settings such a
 auto-refresh toggles and background email sync polling intervals.
 """
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
@@ -93,7 +93,7 @@ def get_sync_health_stats(tz_offset: int = 0, db: Session = Depends(get_db)):
 def get_sync_chart_data(tz_offset: int = 0, db: Session = Depends(get_db)):
     """Fetch 7-day email ingestion statistics broken down by connected IMAP email accounts in user local time."""
     from datetime import datetime, timedelta, timezone
-    from sc_mail_hub.models import EmailAccount, EmailMessage
+    from sc_mail_hub.models import EmailAccount, EmailMessage, IngestionStat
 
     now_utc = datetime.now(timezone.utc)
     now_local = now_utc - timedelta(minutes=tz_offset)
@@ -109,10 +109,6 @@ def get_sync_chart_data(tz_offset: int = 0, db: Session = Depends(get_db)):
     start_local_dt = datetime.combine(days[0], datetime.min.time())
     start_utc_dt = start_local_dt + timedelta(minutes=tz_offset)
 
-    messages = db.query(EmailMessage.account_email, EmailMessage.received_at).filter(
-        EmailMessage.received_at >= start_utc_dt
-    ).all()
-
     account_data: Dict[str, Dict[str, int]] = {}
     account_map: Dict[str, str] = {}
 
@@ -120,25 +116,41 @@ def get_sync_chart_data(tz_offset: int = 0, db: Session = Depends(get_db)):
         account_data[email_addr] = {d_str: 0 for d_str in day_iso_strs}
         account_map[email_addr] = f"{name} ({email_addr})" if (name and name != email_addr) else email_addr
 
-    for acc_email, r_at in messages:
-        if not r_at:
-            continue
-        if r_at.tzinfo is None:
-            r_at_utc = r_at.replace(tzinfo=timezone.utc)
-        else:
-            r_at_utc = r_at
-        r_at_local = r_at_utc - timedelta(minutes=tz_offset)
-        d_str = r_at_local.strftime("%Y-%m-%d")
-        if d_str in day_iso_strs:
-            target_key = acc_email if acc_email else "System"
-            if target_key not in account_data:
-                account_data[target_key] = {ds: 0 for ds in day_iso_strs}
-                if target_key == "System":
-                    account_map["System"] = "System"
-                else:
-                    account_map[target_key] = f"{target_key} (Disconnected)"
+    # Query persistent IngestionStat first so counts survive email purges
+    min_stat_date = (start_local_dt - timedelta(days=1)).strftime("%Y-%m-%d")
+    stats = db.query(IngestionStat).filter(IngestionStat.date_str >= min_stat_date).all()
 
-            account_data[target_key][d_str] = account_data[target_key].get(d_str, 0) + 1
+    if stats:
+        for s in stats:
+            try:
+                utc_dt = datetime.strptime(f"{s.date_str} {s.hour_utc:02d}", "%Y-%m-%d %H").replace(tzinfo=timezone.utc)
+                local_dt = utc_dt - timedelta(minutes=tz_offset)
+                d_str = local_dt.strftime("%Y-%m-%d")
+                if d_str in day_iso_strs:
+                    target_key = s.account_email if s.account_email else "System"
+                    if target_key not in account_data:
+                        account_data[target_key] = {ds: 0 for ds in day_iso_strs}
+                        account_map[target_key] = "System" if target_key == "System" else f"{target_key} (Disconnected)"
+                    account_data[target_key][d_str] = account_data[target_key].get(d_str, 0) + (s.count or 0)
+            except Exception:
+                pass
+    else:
+        # Fallback to raw EmailMessage table
+        messages = db.query(EmailMessage.account_email, EmailMessage.received_at).filter(
+            EmailMessage.received_at >= start_utc_dt
+        ).all()
+        for acc_email, r_at in messages:
+            if not r_at:
+                continue
+            r_at_utc = r_at.replace(tzinfo=timezone.utc) if r_at.tzinfo is None else r_at
+            r_at_local = r_at_utc - timedelta(minutes=tz_offset)
+            d_str = r_at_local.strftime("%Y-%m-%d")
+            if d_str in day_iso_strs:
+                target_key = acc_email if acc_email else "System"
+                if target_key not in account_data:
+                    account_data[target_key] = {ds: 0 for ds in day_iso_strs}
+                    account_map[target_key] = "System" if target_key == "System" else f"{target_key} (Disconnected)"
+                account_data[target_key][d_str] = account_data[target_key].get(d_str, 0) + 1
 
     series = []
     colors = ["#60a5fa", "#34d399", "#a78bfa", "#fbbf24", "#f472b6", "#38bdf8"]
@@ -160,6 +172,152 @@ def get_sync_chart_data(tz_offset: int = 0, db: Session = Depends(get_db)):
         "days": day_labels,
         "series": series
     }
+
+
+@router.get("/ingestion-calendar-data")
+def get_ingestion_calendar_data(
+    year: Optional[int] = None,
+    month: Optional[int] = None,
+    tz_offset: int = 0,
+    db: Session = Depends(get_db)
+):
+    """Fetch monthly calendar email ingestion statistics broken down by day and connected IMAP account."""
+    import calendar
+    from datetime import datetime, timedelta, timezone, date
+    from sc_mail_hub.models import EmailAccount, IngestionStat, EmailMessage
+
+    now_utc = datetime.now(timezone.utc)
+    now_local = now_utc - timedelta(minutes=tz_offset)
+
+    target_year = year if year is not None else now_local.year
+    target_month = month if month is not None else now_local.month
+
+    # Get weekday of 1st day (0 = Monday, ..., 6 = Sunday) and total days in month
+    first_weekday, num_days = calendar.monthrange(target_year, target_month)
+    month_name = date(target_year, target_month, 1).strftime("%B %Y")
+
+    active_accounts = db.query(EmailAccount).all()
+    active_emails = {acc.email_address: acc.name for acc in active_accounts}
+
+    month_iso_strs = [f"{target_year:04d}-{target_month:02d}-{day:02d}" for day in range(1, num_days + 1)]
+
+    # Calculate UTC bounds covering this entire local month
+    start_local = datetime(target_year, target_month, 1, 0, 0, 0)
+    end_local = datetime(target_year, target_month, num_days, 23, 59, 59)
+    start_utc = start_local + timedelta(minutes=tz_offset)
+    end_utc = end_local + timedelta(minutes=tz_offset)
+
+    min_date_str = (start_utc - timedelta(days=1)).strftime("%Y-%m-%d")
+    max_date_str = (end_utc + timedelta(days=1)).strftime("%Y-%m-%d")
+
+    stats = db.query(IngestionStat).filter(
+        IngestionStat.date_str >= min_date_str,
+        IngestionStat.date_str <= max_date_str
+    ).all()
+
+    fallback_messages = []
+    if not stats:
+        fallback_messages = db.query(EmailMessage.account_email, EmailMessage.received_at).filter(
+            EmailMessage.received_at >= start_utc,
+            EmailMessage.received_at <= end_utc
+        ).all()
+
+    daily_counts: Dict[str, Dict[str, Any]] = {
+        d_str: {"total": 0, "by_account": {}} for d_str in month_iso_strs
+    }
+    all_account_keys = set(active_emails.keys())
+
+    if stats:
+        for s in stats:
+            try:
+                utc_dt = datetime.strptime(f"{s.date_str} {s.hour_utc:02d}", "%Y-%m-%d %H").replace(tzinfo=timezone.utc)
+                local_dt = utc_dt - timedelta(minutes=tz_offset)
+                d_str = local_dt.strftime("%Y-%m-%d")
+                if d_str in daily_counts:
+                    acc_key = s.account_email if s.account_email else "System"
+                    all_account_keys.add(acc_key)
+                    daily_counts[d_str]["total"] += (s.count or 0)
+                    curr_acc_cnt = daily_counts[d_str]["by_account"].get(acc_key, 0)
+                    daily_counts[d_str]["by_account"][acc_key] = curr_acc_cnt + (s.count or 0)
+            except Exception:
+                pass
+    else:
+        for acc_email, r_at in fallback_messages:
+            if not r_at:
+                continue
+            r_at_utc = r_at.replace(tzinfo=timezone.utc) if r_at.tzinfo is None else r_at
+            r_at_local = r_at_utc - timedelta(minutes=tz_offset)
+            d_str = r_at_local.strftime("%Y-%m-%d")
+            if d_str in daily_counts:
+                acc_key = acc_email if acc_email else "System"
+                all_account_keys.add(acc_key)
+                daily_counts[d_str]["total"] += 1
+                curr_acc_cnt = daily_counts[d_str]["by_account"].get(acc_key, 0)
+                daily_counts[d_str]["by_account"][acc_key] = curr_acc_cnt + 1
+
+    colors = ["#60a5fa", "#34d399", "#a78bfa", "#fbbf24", "#f472b6", "#38bdf8"]
+    account_map: Dict[str, str] = {}
+    for email_addr, name in active_emails.items():
+        account_map[email_addr] = f"{name} ({email_addr})" if (name and name != email_addr) else email_addr
+
+    series = []
+    sorted_acc_keys = sorted(list(all_account_keys))
+    for idx, acc_key in enumerate(sorted_acc_keys):
+        acc_name = account_map.get(acc_key, acc_key if acc_key == "System" else f"{acc_key} (Disconnected)")
+        series.append({
+            "account_id": acc_key,
+            "account_name": acc_name,
+            "color": colors[idx % len(colors)]
+        })
+
+    month_total = sum(d["total"] for d in daily_counts.values())
+    daily_average = round(month_total / num_days, 1) if num_days > 0 else 0.0
+
+    peak_day_str = None
+    peak_count = 0
+    for d_str, d_info in daily_counts.items():
+        if d_info["total"] > peak_count:
+            peak_count = d_info["total"]
+            peak_day_str = d_str
+
+    available_months_set = set()
+    try:
+        stat_dates = db.query(IngestionStat.date_str).distinct().all()
+        for (d_val,) in stat_dates:
+            if d_val and len(d_val) >= 7:
+                available_months_set.add(d_val[:7])
+    except Exception:
+        pass
+
+    try:
+        msg_dates = db.query(EmailMessage.received_at).distinct().all()
+        for (r_at,) in msg_dates:
+            if r_at:
+                available_months_set.add(r_at.strftime("%Y-%m"))
+    except Exception:
+        pass
+
+    available_months_set.add(f"{target_year:04d}-{target_month:02d}")
+    available_months_set.add(now_local.strftime("%Y-%m"))
+    available_months = sorted(list(available_months_set))
+
+    return {
+        "year": target_year,
+        "month": target_month,
+        "month_name": month_name,
+        "days_in_month": num_days,
+        "first_weekday": first_weekday,
+        "series": series,
+        "daily_counts": daily_counts,
+        "month_total": month_total,
+        "daily_average": daily_average,
+        "peak_day": {
+            "date": peak_day_str,
+            "count": peak_count
+        } if peak_day_str else None,
+        "available_months": available_months
+    }
+
 
 
 

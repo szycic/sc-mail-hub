@@ -140,6 +140,51 @@ class EmailService:
                 pass
 
     @classmethod
+    def record_ingestion(
+        cls,
+        db: Session,
+        account_email: str,
+        received_at: Optional[datetime] = None,
+        account_id: Optional[int] = None,
+        count: int = 1
+    ):
+        """Record permanent email ingestion telemetry per account, surviving candidate/email purges."""
+        if not account_email:
+            return
+        from sc_mail_hub.models import IngestionStat
+
+        if not received_at:
+            received_at = datetime.now(timezone.utc)
+        elif received_at.tzinfo is not None:
+            received_at = received_at.astimezone(timezone.utc)
+
+        date_str = received_at.strftime("%Y-%m-%d")
+        hour_utc = received_at.hour
+
+        try:
+            stat = db.query(IngestionStat).filter(
+                IngestionStat.date_str == date_str,
+                IngestionStat.hour_utc == hour_utc,
+                IngestionStat.account_email == account_email
+            ).first()
+
+            if stat:
+                stat.count = (stat.count or 0) + count
+                if account_id and not stat.account_id:
+                    stat.account_id = account_id
+            else:
+                stat = IngestionStat(
+                    date_str=date_str,
+                    hour_utc=hour_utc,
+                    account_id=account_id,
+                    account_email=account_email,
+                    count=count
+                )
+                db.add(stat)
+        except Exception as err:
+            logger.warning(f"Failed to record ingestion stat: {err}")
+
+    @classmethod
     def get_sync_health_stats(cls, db: Session, tz_offset: int = 0) -> Dict[str, Any]:
         """Compute live IMAP sync health metrics including today's total ingested emails in user local time."""
         now_utc = datetime.now(timezone.utc)
@@ -150,6 +195,20 @@ class EmailService:
         today_db_count = db.query(EmailMessage).filter(EmailMessage.received_at >= today_utc_start).count()
 
         today_str = now_local.strftime("%Y-%m-%d")
+        today_stat_count = 0
+        try:
+            from sc_mail_hub.models import IngestionStat
+            stat_rows = db.query(IngestionStat).filter(
+                IngestionStat.date_str >= (now_utc - timedelta(days=2)).strftime("%Y-%m-%d")
+            ).all()
+            for s in stat_rows:
+                s_dt = datetime.strptime(f"{s.date_str} {s.hour_utc:02d}", "%Y-%m-%d %H").replace(tzinfo=timezone.utc)
+                s_local = s_dt - timedelta(minutes=tz_offset)
+                if s_local.strftime("%Y-%m-%d") == today_str:
+                    today_stat_count += (s.count or 0)
+        except Exception:
+            pass
+
         persisted_today = 0
         try:
             from sc_mail_hub.api.admin import get_or_create_system_settings
@@ -159,7 +218,7 @@ class EmailService:
         except Exception:
             pass
 
-        emails_today = max(today_db_count, cls._last_sync_stats["cumulative_fetched_today"], persisted_today)
+        emails_today = max(today_db_count, today_stat_count, cls._last_sync_stats["cumulative_fetched_today"], persisted_today)
 
         status = "healthy"
         if cls._last_sync_stats["last_error"]:
@@ -199,9 +258,16 @@ class EmailService:
         """Inject sample emails into the database for demonstration and testing."""
         created_messages = []
         ts = int(datetime.now(timezone.utc).timestamp())
+        acc_email = "sample@sc-mail-hub.local"
+        if account_id:
+            acc_obj = db.query(EmailAccount).filter(EmailAccount.id == account_id).first()
+            if acc_obj:
+                acc_email = acc_obj.email_address
+
         for i, sample in enumerate(SAMPLE_EMAILS):
             msg = EmailMessage(
                 account_id=account_id,
+                account_email=acc_email,
                 message_id=f"sample-{ts}-{i}@sc-mail-hub.local",
                 sender=sample["sender"],
                 recipient="me@sc-mail-hub.local",
@@ -212,6 +278,13 @@ class EmailService:
             )
             db.add(msg)
             created_messages.append(msg)
+            EmailService.record_ingestion(
+                db=db,
+                account_email=acc_email,
+                received_at=msg.received_at,
+                account_id=account_id,
+                count=1
+            )
         
         db.commit()
         for m in created_messages:
@@ -364,6 +437,13 @@ class EmailService:
                                     )
                                     db.add(email_record)
                                     fetched_messages.append(email_record)
+                                    EmailService.record_ingestion(
+                                        db=db,
+                                        account_email=account.email_address,
+                                        received_at=received_dt,
+                                        account_id=account.id,
+                                        count=1
+                                    )
                                     logger.info(f"  📥 [IMAP] Downloaded email ID={msg_id} | Subject='{subject}' | From='{sender}'")
                                 else:
                                     if existing.account_id == account.id and not existing.email_uid:

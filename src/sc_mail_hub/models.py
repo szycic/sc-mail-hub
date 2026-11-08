@@ -6,7 +6,7 @@ Notion configuration & field mappings, and AI settings.
 
 from datetime import datetime, timezone
 from typing import Any
-from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sc_mail_hub.database import Base
 
@@ -169,4 +169,21 @@ class AutoIgnoreRule(Base):
     pattern: Any = Column(String(255), nullable=False)
     is_active: Any = Column(Boolean, default=True)
     created_at: Any = Column(DateTime, default=_utc_now)
+
+
+class IngestionStat(Base):
+    """Stores permanent hourly email ingestion telemetry per account, surviving candidate & email purges."""
+    __tablename__ = "ingestion_stats"
+
+    id: Any = Column(Integer, primary_key=True, index=True)
+    date_str: Any = Column(String(10), nullable=False, index=True)   # 'YYYY-MM-DD' (UTC)
+    hour_utc: Any = Column(Integer, nullable=False, default=0)        # 0 - 23 (UTC)
+    account_id: Any = Column(Integer, nullable=True, index=True)      # EmailAccount.id reference
+    account_email: Any = Column(String(255), nullable=False, index=True)
+    count: Any = Column(Integer, nullable=False, default=1)
+
+    __table_args__ = (
+        UniqueConstraint("date_str", "hour_utc", "account_email", name="uq_ingestion_hourly_account"),
+    )
+
 
