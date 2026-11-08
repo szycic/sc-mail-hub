@@ -178,12 +178,26 @@ async function fillTaskReviewForm(candidate) {
   setTaskReviewFormSubmittingState(false);
 
   // Populate Right Column: Original Email Reference with Link Highlighting
+  const accWrapEl = document.getElementById("review-account-meta-wrap");
+  const accNameEl = document.getElementById("review-account-name");
   const senderEl = document.getElementById("review-email-sender");
   const recipientEl = document.getElementById("review-email-recipient");
   const subjectEl = document.getElementById("review-email-subject");
   const dateEl = document.getElementById("review-email-received");
   const updatedEl = document.getElementById("review-candidate-updated");
   const bodyEl = document.getElementById("review-email-body");
+
+  if (accWrapEl && accNameEl) {
+    const accLabel = candidate.account_name || candidate.account_email;
+    const accColor = candidate.account_color || "var(--text-main)";
+    if (accLabel) {
+      accWrapEl.style.display = "inline";
+      accNameEl.textContent = accLabel;
+      accNameEl.style.color = accColor;
+    } else {
+      accWrapEl.style.display = "none";
+    }
+  }
 
   if (senderEl) senderEl.textContent = candidate.sender || "Unknown Sender";
   if (recipientEl) recipientEl.textContent = candidate.recipient || "Me";

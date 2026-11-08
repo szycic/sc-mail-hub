@@ -792,6 +792,9 @@ function renderCandidates(candidates) {
     const startDateFmt = (isCreated || isAiProcessed) ? formatStandardDisplayDate(c.start_date) : "";
     const deadlineFmt = (isCreated || isAiProcessed) ? formatStandardDisplayDate(c.deadline) : "";
 
+    const accLabel = c.account_name || c.account_email;
+    const accColor = c.account_color || "#60a5fa";
+
     return `
       <div class="candidate-card ${index === focusedCandidateIndex ? 'focused' : ''}" id="candidate-card-${c.id}" tabindex="0" data-id="${c.id}" data-index="${index}" style="${c.account_color ? `border-left: 4px solid ${c.account_color};` : ''}">
         <div class="candidate-header">
@@ -823,6 +826,7 @@ function renderCandidates(candidates) {
         ${(isCreated || isAiProcessed) && c.summary ? `<p class="candidate-summary">${escapeHtml(c.summary)}</p>` : ''}
 
         <div class="candidate-meta">
+          ${accLabel ? `<div>📬 Account: <strong style="color:${accColor};">${escapeHtml(accLabel)}</strong>${c.account_email && c.account_name && c.account_email !== c.account_name ? ` <span style="color:var(--text-dim); font-size:11px;">(${escapeHtml(c.account_email)})</span>` : ''}</div>` : ''}
           ${c.sender ? `<div>📧 From: <strong>${escapeHtml(c.sender)}</strong></div>` : ''}
           ${c.recipient ? `<div>📥 To: <strong>${escapeHtml(c.recipient)}</strong></div>` : ''}
           ${c.subject ? `<div>✉️ Subject: <i>"${escapeHtml(c.subject)}"</i></div>` : ''}
