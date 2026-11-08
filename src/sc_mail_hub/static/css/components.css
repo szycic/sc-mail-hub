@@ -865,6 +865,16 @@ kbd {
     font-size: 12px;
   }
 
+  .ingestion-cal-account-filter-wrap {
+    width: 100%;
+  }
+
+  .ingestion-cal-account-filter-wrap select {
+    max-width: 100% !important;
+    font-size: 12px !important;
+    height: 32px !important;
+  }
+
   .ingestion-cal-metrics {
     display: flex;
     justify-content: space-between;

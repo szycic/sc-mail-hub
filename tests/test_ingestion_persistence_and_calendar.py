@@ -228,16 +228,23 @@ def test_ingestion_calendar_data_api(db_session):
     assert day1["total"] == 8
     assert day1["by_account"]["p@test.com"] == 5
     assert day1["by_account"]["w@test.com"] == 3
+    assert day1["peak_hour"] is not None
+    assert day1["peak_hour"]["hour"] == 10
+    assert day1["peak_hour"]["count"] == 8
 
     # Check Day 15
     day15 = data["daily_counts"]["2025-05-15"]
     assert day15["total"] == 12
     assert day15["by_account"]["w@test.com"] == 12
+    assert day15["peak_hour"] is not None
+    assert day15["peak_hour"]["hour"] == 14
+    assert day15["peak_hour"]["count"] == 12
 
     # Check empty day
     day2 = data["daily_counts"]["2025-05-02"]
     assert day2["total"] == 0
     assert len(day2["by_account"]) == 0
+    assert day2["peak_hour"] is None
 
     # Summary metrics
     assert data["month_total"] == 20
@@ -247,3 +254,38 @@ def test_ingestion_calendar_data_api(db_session):
 
     # Available months list contains 2025-05
     assert "2025-05" in data["available_months"]
+
+
+def test_database_backup_and_integrity_endpoints(db_session, tmp_path):
+    """Test SQLite database integrity check and on-demand rolling backup endpoint."""
+    # 1. Test db-health endpoint
+    res = client.get("/api/admin/db-health")
+    assert res.status_code == 200
+    health_data = res.json()
+    assert health_data["is_healthy"] is True
+    assert health_data["status"] == "healthy"
+    assert "size_mb" in health_data
+
+    # 2. Test sync-health includes db_health
+    res_sync = client.get("/api/admin/sync-health?tz_offset=0")
+    assert res_sync.status_code == 200
+    sync_data = res_sync.json()
+    assert "db_health" in sync_data
+    assert sync_data["db_health"]["is_healthy"] is True
+
+    # 3. Test on-demand database backup
+    res_backup = client.post("/api/admin/database/backup")
+    assert res_backup.status_code == 200
+    backup_data = res_backup.json()
+    assert backup_data["success"] is True
+    assert backup_data["filename"].startswith("sc_mail_hub_")
+    assert backup_data["filename"].endswith(".db")
+    assert backup_data["size_mb"] >= 0
+
+    # 4. Re-check db-health to ensure total_backups reflects newly created backup
+    res2 = client.get("/api/admin/db-health")
+    assert res2.status_code == 200
+    h2 = res2.json()
+    assert h2["total_backups"] >= 1
+    assert h2["last_backup"] is not None
+    assert h2["last_backup"]["filename"] == backup_data["filename"]

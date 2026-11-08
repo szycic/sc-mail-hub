@@ -86,7 +86,30 @@ def update_admin_settings(payload: SystemSettingsUpdate, db: Session = Depends(g
 def get_sync_health_stats(tz_offset: int = 0, db: Session = Depends(get_db)):
     """Fetch live IMAP sync health metrics and status indicators."""
     from sc_mail_hub.services.email_service import EmailService
-    return EmailService.get_sync_health_stats(db, tz_offset=tz_offset)
+    from sc_mail_hub.services.backup_service import DatabaseBackupService
+    data = EmailService.get_sync_health_stats(db, tz_offset=tz_offset)
+    try:
+        data["db_health"] = DatabaseBackupService.check_integrity()
+    except Exception as e:
+        data["db_health"] = {"is_healthy": False, "status": "error", "message": str(e)}
+    return data
+
+
+@router.get("/db-health")
+def get_database_health():
+    """Perform quick integrity check and return SQLite backup status."""
+    from sc_mail_hub.services.backup_service import DatabaseBackupService
+    return DatabaseBackupService.check_integrity()
+
+
+@router.post("/database/backup")
+def trigger_database_backup():
+    """Trigger an immediate SQLite database online backup with rotation."""
+    from sc_mail_hub.services.backup_service import DatabaseBackupService
+    result = DatabaseBackupService.create_backup()
+    if not result.get("success"):
+        raise HTTPException(status_code=500, detail=result.get("error", "Database backup failed"))
+    return result
 
 
 @router.get("/sync-chart-data")
@@ -223,7 +246,13 @@ def get_ingestion_calendar_data(
         ).all()
 
     daily_counts: Dict[str, Dict[str, Any]] = {
-        d_str: {"total": 0, "by_account": {}} for d_str in month_iso_strs
+        d_str: {
+            "total": 0,
+            "by_account": {},
+            "by_hour": {},
+            "hourly_by_account": {},
+            "peak_hour": None
+        } for d_str in month_iso_strs
     }
     all_account_keys = set(active_emails.keys())
 
@@ -233,12 +262,20 @@ def get_ingestion_calendar_data(
                 utc_dt = datetime.strptime(f"{s.date_str} {s.hour_utc:02d}", "%Y-%m-%d %H").replace(tzinfo=timezone.utc)
                 local_dt = utc_dt - timedelta(minutes=tz_offset)
                 d_str = local_dt.strftime("%Y-%m-%d")
+                local_hour = local_dt.hour
                 if d_str in daily_counts:
                     acc_key = s.account_email if s.account_email else "System"
                     all_account_keys.add(acc_key)
-                    daily_counts[d_str]["total"] += (s.count or 0)
-                    curr_acc_cnt = daily_counts[d_str]["by_account"].get(acc_key, 0)
-                    daily_counts[d_str]["by_account"][acc_key] = curr_acc_cnt + (s.count or 0)
+                    cnt = s.count or 0
+                    daily_counts[d_str]["total"] += cnt
+                    daily_counts[d_str]["by_account"][acc_key] = daily_counts[d_str]["by_account"].get(acc_key, 0) + cnt
+                    h_key = str(local_hour)
+                    daily_counts[d_str]["by_hour"][h_key] = daily_counts[d_str]["by_hour"].get(h_key, 0) + cnt
+                    if acc_key not in daily_counts[d_str]["hourly_by_account"]:
+                        daily_counts[d_str]["hourly_by_account"][acc_key] = {}
+                    daily_counts[d_str]["hourly_by_account"][acc_key][h_key] = (
+                        daily_counts[d_str]["hourly_by_account"][acc_key].get(h_key, 0) + cnt
+                    )
             except Exception:
                 pass
     else:
@@ -248,12 +285,27 @@ def get_ingestion_calendar_data(
             r_at_utc = r_at.replace(tzinfo=timezone.utc) if r_at.tzinfo is None else r_at
             r_at_local = r_at_utc - timedelta(minutes=tz_offset)
             d_str = r_at_local.strftime("%Y-%m-%d")
+            local_hour = r_at_local.hour
             if d_str in daily_counts:
                 acc_key = acc_email if acc_email else "System"
                 all_account_keys.add(acc_key)
                 daily_counts[d_str]["total"] += 1
-                curr_acc_cnt = daily_counts[d_str]["by_account"].get(acc_key, 0)
-                daily_counts[d_str]["by_account"][acc_key] = curr_acc_cnt + 1
+                daily_counts[d_str]["by_account"][acc_key] = daily_counts[d_str]["by_account"].get(acc_key, 0) + 1
+                h_key = str(local_hour)
+                daily_counts[d_str]["by_hour"][h_key] = daily_counts[d_str]["by_hour"].get(h_key, 0) + 1
+                if acc_key not in daily_counts[d_str]["hourly_by_account"]:
+                    daily_counts[d_str]["hourly_by_account"][acc_key] = {}
+                daily_counts[d_str]["hourly_by_account"][acc_key][h_key] = (
+                    daily_counts[d_str]["hourly_by_account"][acc_key].get(h_key, 0) + 1
+                )
+
+    for d_str, d_info in daily_counts.items():
+        by_h = d_info["by_hour"]
+        if by_h:
+            top_h_str = max(by_h.keys(), key=lambda h: by_h[h])
+            top_cnt = by_h[top_h_str]
+            if top_cnt > 0:
+                d_info["peak_hour"] = {"hour": int(top_h_str), "count": top_cnt}
 
     colors = ["#60a5fa", "#34d399", "#a78bfa", "#fbbf24", "#f472b6", "#38bdf8"]
     account_map: Dict[str, str] = {}
@@ -487,13 +539,6 @@ def run_system_diagnostics(db: Session = Depends(get_db)):
         total_duration_ms=total_duration_ms,
         results=results
     )
-
-
-@router.get("/sync-health")
-def get_sync_health_stats(db: Session = Depends(get_db)):
-    """Get live IMAP sync health metrics including duration, fetched email count today, and error status."""
-    from sc_mail_hub.services.email_service import EmailService
-    return EmailService.get_sync_health_stats(db)
 
 
 @router.get("/config/export")

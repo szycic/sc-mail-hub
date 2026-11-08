@@ -233,6 +233,41 @@ async def background_email_sync_loop():
             await asyncio.sleep(10)
 
 
+async def background_db_backup_loop():
+    """Background task to run rolling daily SQLite backups (at 03:00 or when none exists for today)."""
+    from sc_mail_hub.services.backup_service import DatabaseBackupService
+
+    # Wait 30 seconds after startup before checking to avoid competing with startup initializations
+    try:
+        await asyncio.sleep(30)
+    except asyncio.CancelledError:
+        return
+
+    while True:
+        try:
+            now = datetime.now()
+            today_prefix = f"sc_mail_hub_{now.strftime('%Y%m%d')}"
+            backups = DatabaseBackupService.list_backups()
+            has_today_backup = any(b["filename"].startswith(today_prefix) for b in backups)
+
+            # Backup if no backup exists for today, OR if it is approximately 03:00 AM (03:00 - 03:30)
+            should_backup = not has_today_backup or (now.hour == 3 and not has_today_backup)
+            if should_backup:
+                res = await asyncio.to_thread(DatabaseBackupService.create_backup)
+                if res.get("success"):
+                    logger.info(f"💾 [DB Backup] Automated backup succeeded: {res.get('filename')} ({res.get('size_mb')} MB)")
+                else:
+                    logger.warning(f"⚠️ [DB Backup] Automated backup failed: {res.get('error')}")
+
+            # Check every 30 minutes
+            await asyncio.sleep(1800)
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"Error in background_db_backup_loop: {e}")
+            await asyncio.sleep(60)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage application background task lifecycle on startup and shutdown."""
@@ -243,12 +278,15 @@ async def lifespan(app: FastAPI):
         db.close()
 
     sync_task = asyncio.create_task(background_email_sync_loop())
+    backup_task = asyncio.create_task(background_db_backup_loop())
     yield
     sync_task.cancel()
-    try:
-        await sync_task
-    except asyncio.CancelledError:
-        pass
+    backup_task.cancel()
+    for t in (sync_task, backup_task):
+        try:
+            await t
+        except asyncio.CancelledError:
+            pass
 
 
 app = FastAPI(

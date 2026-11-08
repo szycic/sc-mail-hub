@@ -111,6 +111,26 @@ async function loadSyncHealthStats() {
       }
     }
 
+    const dbStatusEl = document.getElementById("sync-stat-db-status");
+    const dbSubEl = document.getElementById("sync-stat-db-sub");
+    if (dbStatusEl && dbSubEl) {
+      const dbHealth = data.db_health;
+      if (dbHealth && dbHealth.is_healthy) {
+        dbStatusEl.textContent = `🟢 Healthy (${dbHealth.size_mb || 0} MB)`;
+        dbStatusEl.style.color = "#10b981";
+        const backupInfo = dbHealth.last_backup
+          ? `Backup: ${formatTimeAgo(dbHealth.last_backup.created_at)}`
+          : `${dbHealth.total_backups || 0} backups`;
+        dbSubEl.textContent = `Quick-check OK • ${backupInfo}`;
+        dbSubEl.style.color = "var(--text-muted)";
+      } else if (dbHealth) {
+        dbStatusEl.textContent = "🔴 Corruption / Error";
+        dbStatusEl.style.color = "#ef4444";
+        dbSubEl.textContent = dbHealth.message || "Integrity check failed";
+        dbSubEl.style.color = "#f87171";
+      }
+    }
+
     if (window.activeIngestionView === "calendar") {
       await loadIngestionCalendar(window.currentCalendarYear, window.currentCalendarMonth);
     } else {
@@ -126,9 +146,50 @@ window.currentCalendarYear = null;
 window.currentCalendarMonth = null;
 window.currentCalendarData = null;
 window.currentSyncChartData = null;
+window.calendarAccountFilter = "all";
 let activePopoverEl = null;
 let lastPopoverShowTime = 0;
 let lastTouchTimestamp = 0;
+
+async function triggerManualDbBackup(btnEl) {
+  if (btnEl) {
+    btnEl.disabled = true;
+    btnEl.innerHTML = "⏳...";
+  }
+  try {
+    const res = await fetch("/api/admin/database/backup", { method: "POST" });
+    const result = await res.json();
+    if (res.ok && result.success) {
+      if (typeof showToast === "function") {
+        showToast(`Backup created: ${result.filename} (${result.size_mb} MB)`, "success");
+      }
+      await loadSyncHealthStats();
+    } else {
+      if (typeof showToast === "function") {
+        showToast(`Backup failed: ${result.detail || result.error || "Unknown error"}`, "error");
+      }
+    }
+  } catch (err) {
+    console.error("Backup request error:", err);
+    if (typeof showToast === "function") {
+      showToast(`Backup error: ${err.message}`, "error");
+    }
+  } finally {
+    if (btnEl) {
+      btnEl.disabled = false;
+      btnEl.innerHTML = "💾 Backup";
+    }
+  }
+}
+window.triggerManualDbBackup = triggerManualDbBackup;
+
+function onCalendarAccountFilterChange(val) {
+  window.calendarAccountFilter = val || "all";
+  if (window.currentCalendarData) {
+    renderIngestionCalendar(window.currentCalendarData);
+  }
+}
+window.onCalendarAccountFilterChange = onCalendarAccountFilterChange;
 
 window.addEventListener("touchstart", () => {
   lastTouchTimestamp = Date.now();
@@ -346,16 +407,56 @@ function renderIngestionCalendar(data) {
     renderPickerMonthsGrid();
   }
 
+  // Populate or refresh Account Filter dropdown
+  const filterEl = document.getElementById("cal-account-filter");
+  if (filterEl && data.series) {
+    const currentFilter = window.calendarAccountFilter || "all";
+    let optionsHtml = `<option value="all">👥 All Accounts</option>`;
+    optionsHtml += data.series.map(s => `
+      <option value="${escapeHtml(s.account_id)}">${escapeHtml(s.account_name)}</option>
+    `).join("");
+    filterEl.innerHTML = optionsHtml;
+    if ([...filterEl.options].some(o => o.value === currentFilter)) {
+      filterEl.value = currentFilter;
+    } else {
+      filterEl.value = "all";
+      window.calendarAccountFilter = "all";
+    }
+  }
+
+  const selAccount = window.calendarAccountFilter || "all";
+  const isAll = selAccount === "all";
+  const dailyCounts = data.daily_counts || {};
+  const numDays = data.days_in_month;
+
+  // Compute metrics dynamically based on account filter
+  let filteredMonthTotal = 0;
+  let filteredPeakDate = null;
+  let filteredPeakCount = 0;
+  let maxCount = 1;
+
+  Object.entries(dailyCounts).forEach(([dStr, d]) => {
+    const count = isAll ? (d.total || 0) : ((d.by_account && d.by_account[selAccount]) || 0);
+    filteredMonthTotal += count;
+    if (count > maxCount) maxCount = count;
+    if (count > filteredPeakCount) {
+      filteredPeakCount = count;
+      filteredPeakDate = dStr;
+    }
+  });
+
+  const dailyAvg = numDays > 0 ? (filteredMonthTotal / numDays).toFixed(1) : "0.0";
+
   const totalEl = document.getElementById("cal-stat-month-total");
   const avgEl = document.getElementById("cal-stat-daily-avg");
   const peakEl = document.getElementById("cal-stat-peak-day");
-  if (totalEl) totalEl.textContent = `${data.month_total || 0} emails`;
-  if (avgEl) avgEl.textContent = `${data.daily_average || 0} / day`;
+  if (totalEl) totalEl.textContent = `${filteredMonthTotal} emails`;
+  if (avgEl) avgEl.textContent = `${dailyAvg} / day`;
   if (peakEl) {
-    if (data.peak_day && data.peak_day.count > 0) {
-      const d = new Date(data.peak_day.date + "T00:00:00");
+    if (filteredPeakCount > 0 && filteredPeakDate) {
+      const d = new Date(filteredPeakDate + "T00:00:00");
       const dStr = d.toLocaleDateString("default", { month: "short", day: "numeric" });
-      peakEl.textContent = `${dStr} (${data.peak_day.count})`;
+      peakEl.textContent = `${dStr} (${filteredPeakCount})`;
     } else {
       peakEl.textContent = "None";
     }
@@ -363,25 +464,22 @@ function renderIngestionCalendar(data) {
 
   const legendEl = document.getElementById("sync-chart-legend");
   if (legendEl && data.series && data.series.length > 0) {
-    legendEl.innerHTML = data.series.map(s => `
-      <span style="display:inline-flex; align-items:center; gap:5px; color:var(--text-main);">
-        <span style="width:8px; height:8px; border-radius:50%; background:${s.color}; display:inline-block;"></span>
-        ${escapeHtml(s.account_name)}
-      </span>
-    `).join("");
+    legendEl.innerHTML = data.series.map(s => {
+      const isSelected = !isAll && s.account_id === selAccount;
+      const opacity = (!isAll && !isSelected) ? "0.4" : "1";
+      return `
+        <span style="display:inline-flex; align-items:center; gap:5px; color:var(--text-main); opacity:${opacity}; transition:opacity 0.2s;">
+          <span style="width:8px; height:8px; border-radius:50%; background:${s.color}; display:inline-block;"></span>
+          ${escapeHtml(s.account_name)}
+        </span>
+      `;
+    }).join("");
   }
 
   const gridEl = document.getElementById("ingestion-calendar-grid");
   if (!gridEl) return;
 
   const firstWeekday = data.first_weekday;
-  const numDays = data.days_in_month;
-  const dailyCounts = data.daily_counts || {};
-
-  let maxCount = 1;
-  Object.values(dailyCounts).forEach(d => {
-    if (d.total > maxCount) maxCount = d.total;
-  });
 
   const now = new Date();
   const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
@@ -394,19 +492,19 @@ function renderIngestionCalendar(data) {
   for (let day = 1; day <= numDays; day++) {
     const dStr = `${data.year}-${String(data.month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
     const dayData = dailyCounts[dStr] || { total: 0, by_account: {} };
-    const total = dayData.total || 0;
+    const count = isAll ? (dayData.total || 0) : ((dayData.by_account && dayData.by_account[selAccount]) || 0);
     const isToday = dStr === todayStr;
 
     let densityClass = "cal-density-0";
-    if (total > 0) {
-      const ratio = total / maxCount;
+    if (count > 0) {
+      const ratio = count / maxCount;
       if (ratio <= 0.25) densityClass = "cal-density-1";
       else if (ratio <= 0.5) densityClass = "cal-density-2";
       else if (ratio <= 0.8) densityClass = "cal-density-3";
       else densityClass = "cal-density-4";
     }
 
-    const hasDataClass = total > 0 ? "has-data" : "";
+    const hasDataClass = count > 0 ? "has-data" : "";
     const todayClass = isToday ? "today" : "";
 
     html += `
@@ -417,7 +515,7 @@ function renderIngestionCalendar(data) {
            onmousemove="updateChartPopoverPos(this, event)"
            onmouseleave="handleDayMouseLeave()">
         <span class="ingestion-cal-day-num">${day}</span>
-        ${total > 0 ? `<span class="ingestion-cal-day-count">${total}</span>` : ""}
+        ${count > 0 ? `<span class="ingestion-cal-day-count">${count}</span>` : ""}
       </div>
     `;
   }
@@ -447,18 +545,24 @@ function showCalendarDayPopover(cellEl, event, dateStr) {
   const total = dayData.total || 0;
   const byAccount = dayData.by_account || {};
 
+  const selAccount = window.calendarAccountFilter || "all";
+  const isAll = selAccount === "all";
+  const displayTotal = isAll ? total : (byAccount[selAccount] || 0);
+
   const d = new Date(dateStr + "T00:00:00");
   const dateFormatted = d.toLocaleDateString("default", { weekday: "short", month: "short", day: "numeric", year: "numeric" });
 
   let itemsHtml = "";
-  if (total === 0) {
+  if (displayTotal === 0) {
     itemsHtml = `<div style="color:var(--text-dim); font-size:11px; padding:4px 0;">No emails received on this day.</div>`;
   } else {
     itemsHtml = (data.series || []).map(s => {
       const count = byAccount[s.account_id] || 0;
       if (count === 0) return "";
+      const isFilteredMatch = !isAll && s.account_id === selAccount;
+      const highlightStyle = isFilteredMatch ? "background:rgba(96, 165, 250, 0.15); border:1px solid rgba(96, 165, 250, 0.3);" : "";
       return `
-        <div style="display:flex; align-items:center; justify-content:space-between; gap:16px; padding:3px 6px; border-radius:4px;">
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:16px; padding:3px 6px; border-radius:4px; ${highlightStyle}">
           <span style="display:inline-flex; align-items:center; gap:6px;">
             <span style="width:8px; height:8px; border-radius:50%; background:${s.color}; display:inline-block;"></span>
             ${escapeHtml(s.account_name)}
@@ -478,14 +582,49 @@ function showCalendarDayPopover(cellEl, event, dateStr) {
     }
   }
 
+  // Peak Hour detection (all accounts or specific filtered account)
+  let peakHour = null;
+  if (isAll) {
+    peakHour = dayData.peak_hour;
+  } else if (dayData.hourly_by_account && dayData.hourly_by_account[selAccount]) {
+    const accHours = dayData.hourly_by_account[selAccount];
+    let topH = null;
+    let topC = 0;
+    for (const [h, c] of Object.entries(accHours)) {
+      if (c > topC) {
+        topC = c;
+        topH = parseInt(h, 10);
+      }
+    }
+    if (topC > 0 && topH !== null) {
+      peakHour = { hour: topH, count: topC };
+    }
+  }
+
+  let peakBadgeHtml = "";
+  if (peakHour && peakHour.count > 0) {
+    const startH = String(peakHour.hour).padStart(2, "0") + ":00";
+    const endH = String((peakHour.hour + 1) % 24).padStart(2, "0") + ":00";
+    peakBadgeHtml = `
+      <div style="font-size:10px; color:#fbbf24; margin-top:6px; padding-top:4px; border-top:1px solid rgba(255,255,255,0.08); display:flex; align-items:center; gap:5px;">
+        <span>⚡ Peak Hour:</span>
+        <strong style="color:#fde047;">${startH} – ${endH}</strong>
+        <span style="color:var(--text-dim);">(${peakHour.count} email${peakHour.count === 1 ? '' : 's'})</span>
+      </div>
+    `;
+  }
+
+  const labelText = isAll ? "Day Total" : "Account Total";
+
   bodyEl.innerHTML = `
     <div style="font-weight:700; color:var(--text-main); margin-bottom:6px; font-size:12px; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:4px; display:flex; justify-content:space-between; align-items:center; gap:12px;">
       <span>📅 ${escapeHtml(dateFormatted)}</span>
-      <span style="font-size:10px; color:var(--text-dim); font-weight:400;">Day Total: <strong>${total}</strong></span>
+      <span style="font-size:10px; color:var(--text-dim); font-weight:400;">${labelText}: <strong>${displayTotal}</strong></span>
     </div>
     <div style="display:flex; flex-direction:column; gap:2px;">
       ${itemsHtml}
     </div>
+    ${peakBadgeHtml}
   `;
 
   popoverEl.style.display = "block";
@@ -1447,6 +1586,44 @@ function initIngestionViewButtons() {
     btnCal._bound = true;
     btnCal.addEventListener("click", () => switchIngestionView("calendar"));
   }
+
+  // Mobile swipe gestures for calendar navigation
+  const calViewEl = document.getElementById("ingestion-calendar-view");
+  if (calViewEl && !calViewEl._swipeBound) {
+    calViewEl._swipeBound = true;
+    let swipeStartX = 0;
+    let swipeStartY = 0;
+    let swipeStartTime = 0;
+
+    calViewEl.addEventListener("touchstart", (e) => {
+      if (e.touches && e.touches.length === 1) {
+        swipeStartX = e.touches[0].clientX;
+        swipeStartY = e.touches[0].clientY;
+        swipeStartTime = Date.now();
+      }
+    }, { passive: true });
+
+    calViewEl.addEventListener("touchend", (e) => {
+      if (e.changedTouches && e.changedTouches.length === 1) {
+        const endX = e.changedTouches[0].clientX;
+        const endY = e.changedTouches[0].clientY;
+        const diffX = endX - swipeStartX;
+        const diffY = endY - swipeStartY;
+        const duration = Date.now() - swipeStartTime;
+
+        // Min 45px swipe, fast gesture (< 500ms), predominantly horizontal
+        if (duration < 500 && Math.abs(diffX) >= 45 && Math.abs(diffX) > Math.abs(diffY) * 1.3) {
+          if (diffX < 0) {
+            // Swipe Left -> Next month
+            navCalendarMonth(1);
+          } else {
+            // Swipe Right -> Previous month
+            navCalendarMonth(-1);
+          }
+        }
+      }
+    }, { passive: true });
+  }
 }
 
 if (document.readyState === "loading") {
@@ -1480,6 +1657,8 @@ window.handleDayMouseEnter = handleDayMouseEnter;
 window.handleDayMouseLeave = handleDayMouseLeave;
 window.handleChartMouseEnter = handleChartMouseEnter;
 window.handleChartMouseLeave = handleChartMouseLeave;
+window.onCalendarAccountFilterChange = onCalendarAccountFilterChange;
+window.triggerManualDbBackup = triggerManualDbBackup;
 
 
 

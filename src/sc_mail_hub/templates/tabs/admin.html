@@ -40,6 +40,19 @@
         <span id="sync-stat-error" style="font-size:10px; color:var(--text-muted); word-break:break-all;">0 connection
           errors</span>
       </div>
+
+      <!-- Pill 4: SQLite Database Health & Rolling Backups -->
+      <div
+        style="background:rgba(255,255,255,0.03); padding:12px; border-radius:8px; border:1px solid rgba(255,255,255,0.06); display:flex; flex-direction:column; gap:4px; position:relative;">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <span style="font-size:11px; color:var(--text-dim);">🛡️ SQLite Database</span>
+          <button type="button" id="btn-manual-db-backup" class="btn btn-outline btn-xs" onclick="triggerManualDbBackup(this)" title="Create instant rolling backup" style="padding:1px 6px; font-size:10px; height:20px; line-height:1; min-height:20px;">
+            💾 Backup
+          </button>
+        </div>
+        <span id="sync-stat-db-status" style="font-size:13px; font-weight:700; color:#10b981;">🟢 Healthy (OK)</span>
+        <span id="sync-stat-db-sub" style="font-size:10px; color:var(--text-muted); word-break:break-all;">Quick-check passed</span>
+      </div>
     </div>
 
     <!-- Email Volume Card (7-Day Chart & Monthly Calendar) -->
@@ -122,6 +135,15 @@
                 <button type="button" class="btn btn-outline btn-xs" onclick="closeMonthYearPicker()">Close</button>
               </div>
             </div>
+          </div>
+
+          <!-- Account Filter Dropdown -->
+          <div class="ingestion-cal-account-filter-wrap" style="display:inline-flex; align-items:center;">
+            <select id="cal-account-filter" class="form-input form-input-sm"
+              onchange="onCalendarAccountFilterChange(this.value)"
+              style="padding:3px 8px; font-size:11px; height:28px; background:rgba(0,0,0,0.35); border-color:rgba(255,255,255,0.12); border-radius:6px; color:var(--text-main); cursor:pointer; width:100%; min-width:140px; max-width:230px;">
+              <option value="all">👥 All Accounts</option>
+            </select>
           </div>
 
           <div class="ingestion-cal-metrics">
