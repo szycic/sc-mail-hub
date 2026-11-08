@@ -153,6 +153,9 @@ window.currentCalendarData = null;
 window.currentSyncChartData = null;
 window.calendarAccountFilter = "all";
 let activePopoverEl = null;
+let activePopoverType = null;
+let activePopoverDateStr = null;
+let activePopoverDayIdx = null;
 let lastPopoverShowTime = 0;
 let lastTouchTimestamp = 0;
 
@@ -228,6 +231,8 @@ function onLegendAccountClick(accId, event) {
     event.stopPropagation();
   }
 
+  const clickedInsidePopover = Boolean(event && event.target && event.target.closest("#sync-chart-popover"));
+
   if (!window.selectedAccounts) {
     window.selectedAccounts = new Set();
   }
@@ -272,15 +277,35 @@ function onLegendAccountClick(accId, event) {
     window.calendarAccountFilter = Array.from(window.selectedAccounts);
   }
 
-  hideChartPopover();
+  // Only hide popover if the click originated from outside of it
+  if (!clickedInsidePopover) {
+    hideChartPopover();
+  }
 
   if (window.activeIngestionView === "calendar") {
     if (window.currentCalendarData) {
       renderIngestionCalendar(window.currentCalendarData);
     }
+    // If popover was open and clicked inside, refresh it in place without closing
+    if (clickedInsidePopover && activePopoverType === "calendar" && activePopoverDateStr) {
+      const gridEl = document.getElementById("ingestion-calendar-grid");
+      const newCellEl = gridEl ? gridEl.querySelector(`[data-date="${activePopoverDateStr}"]`) : null;
+      if (newCellEl) {
+        showCalendarDayPopover(newCellEl, null, activePopoverDateStr);
+      }
+    }
   } else {
     if (window.currentSyncChartData) {
       renderSyncChartData(window.currentSyncChartData);
+    }
+    // If chart popover was open and clicked inside, refresh it in place without closing
+    if (clickedInsidePopover && activePopoverType === "chart" && activePopoverDayIdx !== null) {
+      const barsEl = document.getElementById("sync-chart-bars-container");
+      const pills = barsEl ? barsEl.querySelectorAll(".chart-bar-pill") : [];
+      const newPillEl = pills[activePopoverDayIdx];
+      if (newPillEl) {
+        showChartPopover(newPillEl, null, activePopoverDayIdx);
+      }
     }
   }
 }
@@ -703,6 +728,9 @@ function showCalendarDayPopover(cellEl, event, dateStr) {
   initPopoverHoverListeners();
 
   activePopoverEl = cellEl;
+  activePopoverType = "calendar";
+  activePopoverDateStr = dateStr;
+  activePopoverDayIdx = null;
   lastPopoverShowTime = Date.now();
   const data = window.currentCalendarData;
   const dayData = (data.daily_counts && data.daily_counts[dateStr]) || { total: 0, by_account: {} };
@@ -728,11 +756,11 @@ function showCalendarDayPopover(cellEl, event, dateStr) {
       if (count === 0) return "";
       const isFilteredMatch = !isAll && window.selectedAccounts.has(s.account_id);
       const highlightStyle = isFilteredMatch
-        ? `background:rgba(96, 165, 250, 0.2); border:1px solid ${s.color};`
+        ? `background:${s.color}22; border:1px solid ${s.color}; box-shadow:0 0 6px ${s.color}33;`
         : `background:rgba(255, 255, 255, 0.03); border:1px solid rgba(255, 255, 255, 0.06);`;
       const titleText = isFilteredMatch
         ? `Click to deselect ${escapeHtml(s.account_name)}`
-        : `Click to add ${escapeHtml(s.account_name)} to filter`;
+        : (isAll ? `Filter by ${escapeHtml(s.account_name)}` : `Click to add ${escapeHtml(s.account_name)} to filter`);
       return `
         <div class="popover-account-row"
              onclick="onLegendAccountClick('${escapeHtml(s.account_id)}', event)"
@@ -742,7 +770,10 @@ function showCalendarDayPopover(cellEl, event, dateStr) {
             <span style="width:8px; height:8px; border-radius:50%; background:${s.color}; display:inline-block;"></span>
             <span style="color:var(--text-main); font-size:11px;">${escapeHtml(s.account_name)}</span>
           </span>
-          <strong style="color:#60a5fa; font-size:11px;">${count} email${count === 1 ? '' : 's'}</strong>
+          <span style="display:inline-flex; align-items:center; gap:6px;">
+            <strong style="color:#60a5fa; font-size:11px;">${count} email${count === 1 ? '' : 's'}</strong>
+            ${isFilteredMatch ? `<span style="font-size:10px; color:${s.color}; font-weight:700;">✓</span>` : ''}
+          </span>
         </div>
       `;
     }).join("");
@@ -798,7 +829,9 @@ function showCalendarDayPopover(cellEl, event, dateStr) {
     `;
   }
 
-  const labelText = isAll ? "Day Total" : "Account Total";
+  const labelText = isAll
+    ? "Day Total"
+    : (window.selectedAccounts && window.selectedAccounts.size > 1 ? `Selected (${window.selectedAccounts.size})` : "Selected Total");
 
   bodyEl.innerHTML = `
     <div style="font-weight:700; color:var(--text-main); margin-bottom:6px; font-size:12px; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:4px; display:flex; justify-content:space-between; align-items:center; gap:12px;">
@@ -944,6 +977,9 @@ function showChartPopover(pillEl, event, dayIdx) {
   initPopoverHoverListeners();
 
   activePopoverEl = pillEl;
+  activePopoverType = "chart";
+  activePopoverDayIdx = dayIdx;
+  activePopoverDateStr = null;
   lastPopoverShowTime = Date.now();
   const data = window.currentSyncChartData;
   const dayLabel = data.days[dayIdx] || "";
@@ -955,11 +991,11 @@ function showChartPopover(pillEl, event, dayIdx) {
     const val = s.counts[dayIdx] || 0;
     const isFilteredMatch = !isAll && window.selectedAccounts.has(s.account_id);
     const highlightStyle = isFilteredMatch
-      ? `background:rgba(96, 165, 250, 0.2); border:1px solid ${s.color};`
+      ? `background:${s.color}22; border:1px solid ${s.color}; box-shadow:0 0 6px ${s.color}33;`
       : `background:rgba(255, 255, 255, 0.03); border:1px solid rgba(255, 255, 255, 0.06);`;
     const titleText = isFilteredMatch
       ? `Click to deselect ${escapeHtml(s.account_name)}`
-      : `Click to add ${escapeHtml(s.account_name)} to filter`;
+      : (isAll ? `Filter by ${escapeHtml(s.account_name)}` : `Click to add ${escapeHtml(s.account_name)} to filter`);
     return `
       <div class="popover-account-row"
            onclick="onLegendAccountClick('${escapeHtml(s.account_id)}', event)"
@@ -969,7 +1005,10 @@ function showChartPopover(pillEl, event, dayIdx) {
           <span style="width:8px; height:8px; border-radius:50%; background:${s.color}; display:inline-block;"></span>
           <span style="color:var(--text-main); font-size:11px;">${escapeHtml(s.account_name)}</span>
         </span>
-        <strong style="color:#60a5fa; font-size:11px;">${val} email${val === 1 ? '' : 's'}</strong>
+        <span style="display:inline-flex; align-items:center; gap:6px;">
+          <strong style="color:#60a5fa; font-size:11px;">${val} email${val === 1 ? '' : 's'}</strong>
+          ${isFilteredMatch ? `<span style="font-size:10px; color:${s.color}; font-weight:700;">✓</span>` : ''}
+        </span>
       </div>
     `;
   }).join("");
@@ -978,7 +1017,9 @@ function showChartPopover(pillEl, event, dayIdx) {
     ? series.reduce((sum, s) => sum + (s.counts[dayIdx] || 0), 0)
     : series.reduce((sum, s) => sum + (window.selectedAccounts.has(s.account_id) ? (s.counts[dayIdx] || 0) : 0), 0);
 
-  const labelText = isAll ? "Day Total" : "Account Total";
+  const labelText = isAll
+    ? "Day Total"
+    : (window.selectedAccounts && window.selectedAccounts.size > 1 ? `Selected (${window.selectedAccounts.size})` : "Selected Total");
 
   bodyEl.innerHTML = `
     <div style="font-weight:700; color:var(--text-main); margin-bottom:6px; font-size:12px; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:4px; display:flex; justify-content:space-between; align-items:center; gap:12px;">
@@ -1071,6 +1112,9 @@ function hideChartPopover() {
   if (!popoverEl) return;
   popoverEl.style.display = "none";
   activePopoverEl = null;
+  activePopoverType = null;
+  activePopoverDateStr = null;
+  activePopoverDayIdx = null;
 }
 
 // Dismiss popover and month picker when clicking or tapping outside
