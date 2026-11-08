@@ -765,12 +765,13 @@ kbd {
 }
 
 .ingestion-cal-day.has-data {
-  cursor: default;
+  cursor: pointer;
 }
 
 .ingestion-cal-day.has-data:hover {
   filter: brightness(1.25);
   box-shadow: 0 0 10px rgba(59, 130, 246, 0.35);
+  transform: translateY(-1px);
 }
 
 .ingestion-cal-day-num {
