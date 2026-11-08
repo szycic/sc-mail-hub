@@ -188,13 +188,103 @@ async function triggerManualDbBackup(btnEl) {
 }
 window.triggerManualDbBackup = triggerManualDbBackup;
 
-function onCalendarAccountFilterChange(val) {
-  window.calendarAccountFilter = val || "all";
-  if (window.currentCalendarData) {
-    renderIngestionCalendar(window.currentCalendarData);
+let popoverHideTimer = null;
+let isMouseInPopover = false;
+
+function scheduleHidePopover() {
+  if (isRecentTouch()) return;
+  if (popoverHideTimer) clearTimeout(popoverHideTimer);
+  popoverHideTimer = setTimeout(() => {
+    if (!isMouseInPopover) {
+      hideChartPopover();
+    }
+  }, 120);
+}
+
+function cancelHidePopover() {
+  if (popoverHideTimer) {
+    clearTimeout(popoverHideTimer);
+    popoverHideTimer = null;
   }
 }
-window.onCalendarAccountFilterChange = onCalendarAccountFilterChange;
+
+function initPopoverHoverListeners() {
+  const popoverEl = document.getElementById("sync-chart-popover");
+  if (popoverEl && !popoverEl.dataset.hoverBound) {
+    popoverEl.dataset.hoverBound = "true";
+    popoverEl.addEventListener("mouseenter", () => {
+      isMouseInPopover = true;
+      cancelHidePopover();
+    });
+    popoverEl.addEventListener("mouseleave", () => {
+      isMouseInPopover = false;
+      scheduleHidePopover();
+    });
+  }
+}
+
+function onLegendAccountClick(accId) {
+  const current = window.calendarAccountFilter || "all";
+  if (accId === "all" || current === accId) {
+    window.calendarAccountFilter = "all";
+  } else {
+    window.calendarAccountFilter = accId;
+  }
+
+  hideChartPopover();
+
+  if (window.activeIngestionView === "calendar") {
+    if (window.currentCalendarData) {
+      renderIngestionCalendar(window.currentCalendarData);
+    }
+  } else {
+    if (window.currentSyncChartData) {
+      renderSyncChartData(window.currentSyncChartData);
+    }
+  }
+}
+window.onLegendAccountClick = onLegendAccountClick;
+window.onCalendarAccountFilterChange = onLegendAccountClick;
+
+function renderAccountFilterLegend(series) {
+  const legendEl = document.getElementById("sync-chart-legend");
+  if (!legendEl) return;
+
+  if (!series || series.length === 0) {
+    legendEl.innerHTML = `<span style="color:var(--text-dim); font-size:11px;">No active accounts</span>`;
+    return;
+  }
+
+  const selAccount = window.calendarAccountFilter || "all";
+  const isAll = selAccount === "all";
+
+  let html = `
+    <button type="button" class="legend-filter-chip ${isAll ? 'active' : 'dimmed'}"
+      onclick="onLegendAccountClick('all')"
+      title="Show all accounts">
+      <span>👥 All Accounts</span>
+    </button>
+  `;
+
+  html += series.map(s => {
+    const isSelected = !isAll && s.account_id === selAccount;
+    const isDimmed = !isAll && !isSelected;
+    const activeClass = isSelected ? 'active' : (isDimmed ? 'dimmed' : '');
+    const activeStyle = isSelected ? `border-color:${s.color}; box-shadow:0 0 8px ${s.color}50;` : '';
+    return `
+      <button type="button" class="legend-filter-chip ${activeClass}" style="${activeStyle}"
+        onclick="onLegendAccountClick('${escapeHtml(s.account_id)}')"
+        title="Filter by ${escapeHtml(s.account_name)}">
+        <span style="width:8px; height:8px; border-radius:50%; background:${s.color}; display:inline-block; flex-shrink:0;"></span>
+        <span>${escapeHtml(s.account_name)}</span>
+        ${isSelected ? `<span style="font-size:10px; margin-left:3px; opacity:0.8;">✕</span>` : ''}
+      </button>
+    `;
+  }).join("");
+
+  legendEl.innerHTML = html;
+}
+window.renderAccountFilterLegend = renderAccountFilterLegend;
 
 window.addEventListener("touchstart", () => {
   lastTouchTimestamp = Date.now();
@@ -412,25 +502,14 @@ function renderIngestionCalendar(data) {
     renderPickerMonthsGrid();
   }
 
-  // Populate or refresh Account Filter dropdown
-  const filterEl = document.getElementById("cal-account-filter");
-  if (filterEl && data.series) {
-    const currentFilter = window.calendarAccountFilter || "all";
-    let optionsHtml = `<option value="all">👥 All Accounts</option>`;
-    optionsHtml += data.series.map(s => `
-      <option value="${escapeHtml(s.account_id)}">${escapeHtml(s.account_name)}</option>
-    `).join("");
-    filterEl.innerHTML = optionsHtml;
-    if ([...filterEl.options].some(o => o.value === currentFilter)) {
-      filterEl.value = currentFilter;
-    } else {
-      filterEl.value = "all";
-      window.calendarAccountFilter = "all";
-    }
-  }
-
   const selAccount = window.calendarAccountFilter || "all";
   const isAll = selAccount === "all";
+
+  // Render clickable account filter legend chips
+  if (data.series) {
+    renderAccountFilterLegend(data.series);
+  }
+
   const dailyCounts = data.daily_counts || {};
   const numDays = data.days_in_month;
 
@@ -465,20 +544,6 @@ function renderIngestionCalendar(data) {
     } else {
       peakEl.textContent = "None";
     }
-  }
-
-  const legendEl = document.getElementById("sync-chart-legend");
-  if (legendEl && data.series && data.series.length > 0) {
-    legendEl.innerHTML = data.series.map(s => {
-      const isSelected = !isAll && s.account_id === selAccount;
-      const opacity = (!isAll && !isSelected) ? "0.4" : "1";
-      return `
-        <span style="display:inline-flex; align-items:center; gap:5px; color:var(--text-main); opacity:${opacity}; transition:opacity 0.2s;">
-          <span style="width:8px; height:8px; border-radius:50%; background:${s.color}; display:inline-block;"></span>
-          ${escapeHtml(s.account_name)}
-        </span>
-      `;
-    }).join("");
   }
 
   const gridEl = document.getElementById("ingestion-calendar-grid");
@@ -530,18 +595,21 @@ function renderIngestionCalendar(data) {
 
 function handleDayMouseEnter(cellEl, event, dateStr) {
   if (isRecentTouch()) return;
+  cancelHidePopover();
   showCalendarDayPopover(cellEl, event, dateStr);
 }
 
 function handleDayMouseLeave() {
   if (isRecentTouch()) return;
-  hideChartPopover();
+  scheduleHidePopover();
 }
 
 function showCalendarDayPopover(cellEl, event, dateStr) {
   const popoverEl = document.getElementById("sync-chart-popover");
   const bodyEl = document.getElementById("sync-chart-popover-body");
   if (!popoverEl || !bodyEl || !window.currentCalendarData) return;
+
+  initPopoverHoverListeners();
 
   activePopoverEl = cellEl;
   lastPopoverShowTime = Date.now();
@@ -565,21 +633,29 @@ function showCalendarDayPopover(cellEl, event, dateStr) {
       const count = byAccount[s.account_id] || 0;
       if (count === 0) return "";
       const isFilteredMatch = !isAll && s.account_id === selAccount;
-      const highlightStyle = isFilteredMatch ? "background:rgba(96, 165, 250, 0.15); border:1px solid rgba(96, 165, 250, 0.3);" : "";
+      const highlightStyle = isFilteredMatch
+        ? `background:rgba(96, 165, 250, 0.2); border:1px solid ${s.color};`
+        : `background:rgba(255, 255, 255, 0.03); border:1px solid rgba(255, 255, 255, 0.06);`;
       return `
-        <div style="display:flex; align-items:center; justify-content:space-between; gap:16px; padding:3px 6px; border-radius:4px; ${highlightStyle}">
+        <div class="popover-account-row"
+             onclick="onLegendAccountClick('${escapeHtml(s.account_id)}')"
+             title="Click to filter by ${escapeHtml(s.account_name)}"
+             style="display:flex; align-items:center; justify-content:space-between; gap:16px; padding:4px 8px; border-radius:6px; cursor:pointer; transition:all 0.15s ease; ${highlightStyle}">
           <span style="display:inline-flex; align-items:center; gap:6px;">
             <span style="width:8px; height:8px; border-radius:50%; background:${s.color}; display:inline-block;"></span>
-            ${escapeHtml(s.account_name)}
+            <span style="color:var(--text-main); font-size:11px;">${escapeHtml(s.account_name)}</span>
           </span>
-          <strong style="color:#60a5fa;">${count} email${count === 1 ? '' : 's'}</strong>
+          <strong style="color:#60a5fa; font-size:11px;">${count} email${count === 1 ? '' : 's'}</strong>
         </div>
       `;
     }).join("");
 
     if (!itemsHtml) {
       itemsHtml = Object.entries(byAccount).map(([acc, cnt]) => `
-        <div style="display:flex; align-items:center; justify-content:space-between; gap:16px; padding:3px 6px;">
+        <div class="popover-account-row"
+             onclick="onLegendAccountClick('${escapeHtml(acc)}')"
+             title="Click to filter by ${escapeHtml(acc)}"
+             style="display:flex; align-items:center; justify-content:space-between; gap:16px; padding:4px 8px; border-radius:6px; cursor:pointer; transition:all 0.15s ease;">
           <span>${escapeHtml(acc)}</span>
           <strong style="color:#60a5fa;">${cnt} email${cnt === 1 ? '' : 's'}</strong>
         </div>
@@ -660,7 +736,6 @@ function toggleCalendarDayPopover(cellEl, event, dateStr) {
 window.currentSyncChartData = null;
 
 function renderSyncChartData(data) {
-  const legendEl = document.getElementById("sync-chart-legend");
   const barsEl = document.getElementById("sync-chart-bars-container");
   const labelsEl = document.getElementById("sync-chart-labels-container");
   if (!barsEl || !labelsEl || !data) return;
@@ -668,21 +743,18 @@ function renderSyncChartData(data) {
   const days = data.days || [];
   const series = data.series || [];
 
-  if (legendEl) {
-    if (series.length === 0) {
-      legendEl.innerHTML = `<span style="color:var(--text-dim);">No active accounts</span>`;
-    } else {
-      legendEl.innerHTML = series.map(s => `
-        <span style="display:inline-flex; align-items:center; gap:5px; color:var(--text-main);">
-          <span style="width:8px; height:8px; border-radius:50%; background:${s.color}; display:inline-block;"></span>
-          ${escapeHtml(s.account_name)}
-        </span>
-      `).join("");
-    }
-  }
+  renderAccountFilterLegend(series);
+
+  const selAccount = window.calendarAccountFilter || "all";
+  const isAll = selAccount === "all";
 
   const dayTotals = days.map((_, dayIdx) => {
-    return series.reduce((sum, s) => sum + (s.counts[dayIdx] || 0), 0);
+    if (isAll) {
+      return series.reduce((sum, s) => sum + (s.counts[dayIdx] || 0), 0);
+    } else {
+      const match = series.find(s => s.account_id === selAccount);
+      return match ? (match.counts[dayIdx] || 0) : 0;
+    }
   });
   const maxVal = Math.max(...dayTotals, 1);
 
@@ -697,7 +769,9 @@ function renderSyncChartData(data) {
     const segmentsHtml = series.map(s => {
       const val = s.counts[dayIdx] || 0;
       if (val === 0) return "";
-      const pct = ((val / total) * 100).toFixed(1);
+      const isFilteredMatch = !isAll && s.account_id === selAccount;
+      if (!isAll && !isFilteredMatch) return "";
+      const pct = isAll ? ((val / (total || 1)) * 100).toFixed(1) : 100;
       return `
         <div class="chart-segment"
              data-acc="${escapeHtml(s.account_name)}"
@@ -731,6 +805,7 @@ function renderSyncChartData(data) {
 
 function handleChartMouseEnter(pillEl, event, dayIdx) {
   if (isRecentTouch()) return;
+  cancelHidePopover();
   pillEl.style.filter = "brightness(1.25)";
   pillEl.style.boxShadow = "0 0 10px rgba(59,130,246,0.4)";
   showChartPopover(pillEl, event, dayIdx);
@@ -742,7 +817,7 @@ function handleChartMouseLeave(pillEl) {
     pillEl.style.boxShadow = "none";
   }
   if (isRecentTouch()) return;
-  hideChartPopover();
+  scheduleHidePopover();
 }
 
 async function loadSyncChartData() {
@@ -763,31 +838,47 @@ function showChartPopover(pillEl, event, dayIdx) {
   const bodyEl = document.getElementById("sync-chart-popover-body");
   if (!popoverEl || !bodyEl || !window.currentSyncChartData) return;
 
+  initPopoverHoverListeners();
+
   activePopoverEl = pillEl;
   lastPopoverShowTime = Date.now();
   const data = window.currentSyncChartData;
   const dayLabel = data.days[dayIdx] || "";
   const series = data.series || [];
 
+  const selAccount = window.calendarAccountFilter || "all";
+  const isAll = selAccount === "all";
+
   const itemsHtml = series.map(s => {
     const val = s.counts[dayIdx] || 0;
+    const isFilteredMatch = !isAll && s.account_id === selAccount;
+    const highlightStyle = isFilteredMatch
+      ? `background:rgba(96, 165, 250, 0.2); border:1px solid ${s.color};`
+      : `background:rgba(255, 255, 255, 0.03); border:1px solid rgba(255, 255, 255, 0.06);`;
     return `
-      <div style="display:flex; align-items:center; justify-content:space-between; gap:16px; padding:3px 6px; border-radius:4px;">
+      <div class="popover-account-row"
+           onclick="onLegendAccountClick('${escapeHtml(s.account_id)}')"
+           title="Click to filter by ${escapeHtml(s.account_name)}"
+           style="display:flex; align-items:center; justify-content:space-between; gap:16px; padding:4px 8px; border-radius:6px; cursor:pointer; transition:all 0.15s ease; ${highlightStyle}">
         <span style="display:inline-flex; align-items:center; gap:6px;">
           <span style="width:8px; height:8px; border-radius:50%; background:${s.color}; display:inline-block;"></span>
-          ${escapeHtml(s.account_name)}
+          <span style="color:var(--text-main); font-size:11px;">${escapeHtml(s.account_name)}</span>
         </span>
-        <strong style="color:#60a5fa;">${val} email${val === 1 ? '' : 's'}</strong>
+        <strong style="color:#60a5fa; font-size:11px;">${val} email${val === 1 ? '' : 's'}</strong>
       </div>
     `;
   }).join("");
 
-  const dayTotal = series.reduce((sum, s) => sum + (s.counts[dayIdx] || 0), 0);
+  const dayTotal = isAll
+    ? series.reduce((sum, s) => sum + (s.counts[dayIdx] || 0), 0)
+    : (series.find(s => s.account_id === selAccount)?.counts[dayIdx] || 0);
+
+  const labelText = isAll ? "Day Total" : "Account Total";
 
   bodyEl.innerHTML = `
     <div style="font-weight:700; color:var(--text-main); margin-bottom:6px; font-size:12px; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:4px; display:flex; justify-content:space-between; align-items:center; gap:12px;">
       <span>📅 ${escapeHtml(dayLabel)}</span>
-      <span style="font-size:10px; color:var(--text-dim); font-weight:400;">Day Total: <strong>${dayTotal}</strong></span>
+      <span style="font-size:10px; color:var(--text-dim); font-weight:400;">${labelText}: <strong>${dayTotal}</strong></span>
     </div>
     <div style="display:flex; flex-direction:column; gap:2px;">
       ${itemsHtml}
@@ -869,6 +960,8 @@ function updateChartPopoverPos(pillEl, event) {
 }
 
 function hideChartPopover() {
+  cancelHidePopover();
+  isMouseInPopover = false;
   const popoverEl = document.getElementById("sync-chart-popover");
   if (!popoverEl) return;
   popoverEl.style.display = "none";
@@ -1665,6 +1758,8 @@ window.handleDayMouseLeave = handleDayMouseLeave;
 window.handleChartMouseEnter = handleChartMouseEnter;
 window.handleChartMouseLeave = handleChartMouseLeave;
 window.onCalendarAccountFilterChange = onCalendarAccountFilterChange;
+window.onLegendAccountClick = onLegendAccountClick;
+window.renderAccountFilterLegend = renderAccountFilterLegend;
 window.triggerManualDbBackup = triggerManualDbBackup;
 
 

@@ -511,6 +511,57 @@ kbd {
   transition: all 0.15s ease;
 }
 
+/* --- Interactive Account Filter Chips in Legend --- */
+.legend-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 14px;
+  padding: 3px 10px;
+  font-size: 11px;
+  color: var(--text-main);
+  cursor: pointer;
+  transition: all 0.18s ease;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+  line-height: 1.2;
+}
+
+.legend-filter-chip:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.22);
+  transform: translateY(-1px);
+}
+
+.legend-filter-chip:active {
+  transform: translateY(0);
+}
+
+.legend-filter-chip.active {
+  background: rgba(96, 165, 250, 0.18);
+  border-color: rgba(96, 165, 250, 0.5);
+  color: #fff;
+  font-weight: 600;
+  box-shadow: 0 0 10px rgba(96, 165, 250, 0.25);
+}
+
+.legend-filter-chip.dimmed {
+  opacity: 0.38;
+}
+
+.legend-filter-chip.dimmed:hover {
+  opacity: 0.85;
+}
+
+/* Hover style for account rows in popover */
+.popover-account-row:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+  border-color: rgba(255, 255, 255, 0.2) !important;
+}
+
 /* --- Ingestion Calendar Component --- */
 .ingestion-calendar-container {
   margin-top: 14px;
@@ -863,16 +914,6 @@ kbd {
   .picker-month-btn {
     padding: 8px 4px;
     font-size: 12px;
-  }
-
-  .ingestion-cal-account-filter-wrap {
-    width: 100%;
-  }
-
-  .ingestion-cal-account-filter-wrap select {
-    max-width: 100% !important;
-    font-size: 12px !important;
-    height: 32px !important;
   }
 
   .ingestion-cal-metrics {

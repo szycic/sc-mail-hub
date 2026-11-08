@@ -79,7 +79,7 @@
 
       <!-- Floating Hover Popover Card with Arrow Caret (shared between chart & calendar) -->
       <div id="sync-chart-popover"
-        style="position:fixed; z-index:9999; pointer-events:none; background:rgba(15,23,42,0.95); backdrop-filter:blur(8px); border:1px solid rgba(255,255,255,0.15); border-radius:8px; padding:10px 14px; box-shadow:0 10px 25px rgba(0,0,0,0.5); display:none; font-size:11px; color:var(--text-main); white-space:nowrap; transition:opacity 0.15s ease;">
+        style="position:fixed; z-index:9999; pointer-events:auto; background:rgba(15,23,42,0.95); backdrop-filter:blur(8px); border:1px solid rgba(255,255,255,0.15); border-radius:8px; padding:10px 14px; box-shadow:0 10px 25px rgba(0,0,0,0.5); display:none; font-size:11px; color:var(--text-main); white-space:nowrap; transition:opacity 0.15s ease;">
         <div id="sync-chart-popover-body"></div>
         <div id="sync-chart-popover-arrow"
           style="position:absolute; width:8px; height:8px; background:rgba(15,23,42,0.95); border-right:1px solid rgba(255,255,255,0.15); border-bottom:1px solid rgba(255,255,255,0.15); transform:rotate(45deg); bottom:-5px; left:50%; margin-left:-4px;">
@@ -130,15 +130,6 @@
                 <button type="button" class="btn btn-outline btn-xs" onclick="closeMonthYearPicker()">Close</button>
               </div>
             </div>
-          </div>
-
-          <!-- Account Filter Dropdown -->
-          <div class="ingestion-cal-account-filter-wrap" style="display:inline-flex; align-items:center;">
-            <select id="cal-account-filter" class="form-input form-input-sm"
-              onchange="onCalendarAccountFilterChange(this.value)"
-              style="padding:3px 8px; font-size:11px; height:28px; background:rgba(0,0,0,0.35); border-color:rgba(255,255,255,0.12); border-radius:6px; color:var(--text-main); cursor:pointer; width:100%; min-width:140px; max-width:230px;">
-              <option value="all">👥 All Accounts</option>
-            </select>
           </div>
 
           <div class="ingestion-cal-metrics">
