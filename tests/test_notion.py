@@ -92,3 +92,68 @@ def test_admin_settings_update_triggers_sync():
     assert data["imap_sync_interval_seconds"] == 60
 
 
+def test_create_notion_task_respects_cleared_source_url(db_session):
+    """Verify that when a user clears source_url on candidate review, Notion task does not export link."""
+    from unittest.mock import patch, MagicMock
+    from sc_mail_hub.models import EmailMessage, TaskCandidate, NotionConfig, NotionFieldMapping
+    from sc_mail_hub.services.notion_service import NotionService
+
+    config = db_session.query(NotionConfig).first()
+    if not config:
+        config = NotionConfig(api_token="test_token", database_id="test_db_id")
+        db_session.add(config)
+    else:
+        config.api_token = "test_token"
+        config.database_id = "test_db_id"
+    db_session.commit()
+
+    mapping = db_session.query(NotionFieldMapping).filter(NotionFieldMapping.task_field == "source_url").first()
+    if not mapping:
+        mapping = NotionFieldMapping(task_field="source_url", notion_property_name="Link", notion_property_type="url")
+        db_session.add(mapping)
+    else:
+        mapping.notion_property_name = "Link"
+        mapping.notion_property_type = "url"
+    db_session.commit()
+
+    msg = EmailMessage(
+        sender="sender@example.com",
+        recipient="user@example.com",
+        subject="Important Announcement",
+        body_text="Check our website at https://auto-detected-link.com/info for details."
+    )
+    db_session.add(msg)
+    db_session.commit()
+
+    candidate = TaskCandidate(
+        email_id=msg.id,
+        title="Check Announcement",
+        source_url=None,
+        status="AI_PROCESSED"
+    )
+    db_session.add(candidate)
+    db_session.commit()
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {
+        "id": "notion_page_123",
+        "url": "https://notion.so/test-page-123"
+    }
+
+    with patch("httpx.Client.post", return_value=mock_resp) as mock_post:
+        res = NotionService.create_notion_task(candidate, db_session)
+        assert res["success"] is True
+
+        create_page_call = None
+        for c in mock_post.call_args_list:
+            if c[0][0] == "https://api.notion.com/v1/pages":
+                create_page_call = c
+                break
+        assert create_page_call is not None
+        payload = create_page_call[1]["json"]
+        props = payload["properties"]
+        assert "Link" not in props
+
+
+

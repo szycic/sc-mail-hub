@@ -222,14 +222,6 @@ async function fillTaskReviewForm(candidate) {
       currentReviewRawEmailText = candidate.summary || "";
     }
 
-    // Auto-extract link if input is empty
-    if (urlInput && !urlInput.value.trim() && currentReviewRawEmailText) {
-      const linkMatch = currentReviewRawEmailText.match(/https?:\/\/[^\s<>\"'\(\)]+/i);
-      if (linkMatch) {
-        urlInput.value = linkMatch[0].replace(/[\.\,\;\)]+$/, '');
-      }
-    }
-
     updateEmailBodyLinkHighlight();
   }
 }
@@ -333,10 +325,11 @@ async function submitReviewedTaskToNotion() {
 
   setTaskReviewFormSubmittingState(true);
 
+  const urlVal = (document.getElementById("review-url")?.value || "").trim();
   const payload = {
     title: title,
     summary: document.getElementById("review-summary")?.value || "",
-    source_url: document.getElementById("review-url")?.value || null,
+    source_url: urlVal ? urlVal : null,
     priority: document.getElementById("review-priority")?.value || "MEDIUM",
     start_date: document.getElementById("review-start-date")?.value || null,
     deadline: document.getElementById("review-deadline")?.value || null

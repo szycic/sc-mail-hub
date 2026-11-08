@@ -179,18 +179,6 @@ class NotionService:
         if not start_date_val or not str(start_date_val).strip():
             start_date_val = email_date_str
 
-        # Extract real HTTP/HTTPS URLs from email body (if present)
-        http_url = ""
-        if email_msg and email_msg.body_text:
-            extracted_links = re.findall(r'https?://[^\s<>\"\'\(\)]+', email_msg.body_text)
-            for link in extracted_links:
-                link_lower = link.lower()
-                if not any(ignore_kw in link_lower for ignore_kw in ["unsubscribe", "privacy", "opt-out", "preferences"]):
-                    http_url = link
-                    break
-            if not http_url and extracted_links:
-                http_url = extracted_links[0]
-
         # Generate email PDF copy for attachment mapping
         pdf_attachment_url = ""
         pdf_path = None
@@ -204,8 +192,8 @@ class NotionService:
             base_url = (settings.BASE_URL or "http://localhost:8001").rstrip("/")
             pdf_attachment_url = f"{base_url}{pdf_rel}"
 
-        # Use candidate's reviewed source_url if set, otherwise fallback to extracted http_url
-        final_source_url = candidate.source_url if candidate.source_url is not None else http_url
+        # Use candidate's reviewed source_url (if empty or None, do not export any URL to Notion)
+        final_source_url = (candidate.source_url or "").strip()
 
         candidate_values = {
             "title": candidate.title,
