@@ -328,6 +328,54 @@ def test_reconnect_account_reassociates_account_id():
         db.close()
 
 
+def test_candidate_account_badge_metadata(db_session):
+    """Verify that TaskCandidateOut includes account_name and account_color from connected account."""
+    from sc_mail_hub.models import EmailAccount, EmailMessage, TaskCandidate
+    acc = EmailAccount(
+        name="ESN Work",
+        provider="gmail",
+        email_address="esnwork@example.com",
+        color="#a78bfa",
+        order_index=1,
+        is_active=True
+    )
+    db_session.add(acc)
+    db_session.commit()
+    db_session.refresh(acc)
+
+    msg = EmailMessage(
+        account_id=acc.id,
+        account_email=acc.email_address,
+        sender="boss@example.com",
+        recipient=acc.email_address,
+        subject="Important Work Item",
+        body_text="Please handle this task ASAP."
+    )
+    db_session.add(msg)
+    db_session.commit()
+    db_session.refresh(msg)
+
+    candidate = TaskCandidate(
+        email_id=msg.id,
+        title="Handle Important Item",
+        status="PENDING",
+        is_task=True
+    )
+    db_session.add(candidate)
+    db_session.commit()
+
+    res = client.get("/api/inbox/candidates?status=PENDING")
+    assert res.status_code == 200
+    data = res.json()
+    items = data["items"]
+    target = next((item for item in items if item["title"] == "Handle Important Item"), None)
+    assert target is not None
+    assert target["account_name"] == "ESN Work"
+    assert target["account_email"] == "esnwork@example.com"
+    assert target["account_color"] == "#a78bfa"
+
+
+
 
 
 

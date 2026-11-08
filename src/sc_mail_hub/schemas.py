@@ -53,6 +53,8 @@ class TaskCandidateOut(TaskCandidateBase):
     sender: Optional[str] = None
     recipient: Optional[str] = None
     account_email: Optional[str] = None
+    account_name: Optional[str] = None
+    account_color: Optional[str] = None
     recipient_type: Optional[str] = None  # 'DIRECT' or 'MAILING_GROUP'
     subject: Optional[str] = None
     received_at: Optional[str] = None

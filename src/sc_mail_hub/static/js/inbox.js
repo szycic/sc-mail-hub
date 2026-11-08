@@ -792,8 +792,19 @@ function renderCandidates(candidates) {
     const startDateFmt = (isCreated || isAiProcessed) ? formatStandardDisplayDate(c.start_date) : "";
     const deadlineFmt = (isCreated || isAiProcessed) ? formatStandardDisplayDate(c.deadline) : "";
 
+    const accLabel = c.account_name || c.account_email;
+    const accColor = c.account_color || "#60a5fa";
+    const accountBadgeHtml = accLabel ? `
+      <span class="type-pill" style="background:${accColor}18; color:${accColor}; border:1px solid ${accColor}40; font-weight:600; font-size:11px; padding:2px 8px; border-radius:4px; display:inline-flex; align-items:center; gap:5px; cursor:pointer;"
+        onclick="filterInboxByAccount('${escapeHtml(c.account_email || '')}', event)"
+        title="Mailbox: ${escapeHtml(accLabel)} • Click to filter inbox">
+        <span style="width:7px; height:7px; border-radius:50%; background:${accColor}; box-shadow:0 0 5px ${accColor}90; display:inline-block; flex-shrink:0;"></span>
+        <span>${escapeHtml(accLabel)}</span>
+      </span>
+    ` : '';
+
     return `
-      <div class="candidate-card ${index === focusedCandidateIndex ? 'focused' : ''}" id="candidate-card-${c.id}" tabindex="0" data-id="${c.id}" data-index="${index}">
+      <div class="candidate-card ${index === focusedCandidateIndex ? 'focused' : ''}" id="candidate-card-${c.id}" tabindex="0" data-id="${c.id}" data-index="${index}" style="${c.account_color ? `border-left: 3.5px solid ${c.account_color};` : ''}">
         <div class="candidate-header">
           <div style="display:flex; align-items:flex-start; gap:10px;">
             ${currentStatusFilter !== "ALL" ? `
@@ -802,6 +813,7 @@ function renderCandidates(candidates) {
             ` : ''}
             <div>
               <div style="display:flex; align-items:center; gap:8px; margin-bottom: 6px; flex-wrap:wrap;">
+                ${accountBadgeHtml}
                 ${c.recipient_type === "DIRECT" ? `<span class="type-pill" style="background:rgba(16,185,129,0.15); color:#6ee7b7; border:1px solid rgba(16,185,129,0.3); font-weight:600; font-size:11px; padding:3px 8px; border-radius:4px;">👤 Direct Email</span>` : ''}
                 ${c.recipient_type === "MAILING_GROUP" ? `<span class="type-pill" style="background:rgba(168,85,247,0.15); color:#c084fc; border:1px solid rgba(168,85,247,0.3); font-weight:600; font-size:11px; padding:3px 8px; border-radius:4px;">👥 Mailing Group</span>` : ''}
                 ${(isCreated || isAiProcessed) && c.priority ? `<span class="importance-badge ${c.priority}">${escapeHtml(c.priority)}</span>` : ''}
@@ -823,6 +835,7 @@ function renderCandidates(candidates) {
         ${(isCreated || isAiProcessed) && c.summary ? `<p class="candidate-summary">${escapeHtml(c.summary)}</p>` : ''}
 
         <div class="candidate-meta">
+          ${accLabel ? `<div>📬 Account: <strong style="color:${accColor};">${escapeHtml(accLabel)}</strong>${c.account_email && c.account_name && c.account_email !== c.account_name ? ` <span style="color:var(--text-dim); font-size:11px;">(${escapeHtml(c.account_email)})</span>` : ''}</div>` : ''}
           ${c.sender ? `<div>📧 From: <strong>${escapeHtml(c.sender)}</strong></div>` : ''}
           ${c.recipient ? `<div>📥 To: <strong>${escapeHtml(c.recipient)}</strong></div>` : ''}
           ${c.subject ? `<div>✉️ Subject: <i>"${escapeHtml(c.subject)}"</i></div>` : ''}
@@ -1573,4 +1586,19 @@ async function submitQuickRule() {
     }
   }
 }
+
+function filterInboxByAccount(accEmail, event) {
+  if (event) event.stopPropagation();
+  const selectEl = document.getElementById("filter-account");
+  if (selectEl && accEmail) {
+    selectEl.value = accEmail;
+    currentPage = 1;
+    loadCandidates(1);
+    if (typeof showToast === "function") {
+      showToast(`Filtered inbox by account: ${accEmail}`, "info");
+    }
+  }
+}
+window.filterInboxByAccount = filterInboxByAccount;
+
 

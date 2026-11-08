@@ -383,6 +383,32 @@ def get_inbox_stats(db: Session = Depends(get_db)):
     return compute_inbox_stats(db)
 
 
+def _enrich_candidate_out(out: TaskCandidateOut, email_msg: Optional[EmailMessage], db: Session):
+    if not email_msg:
+        return
+    out.sender = email_msg.sender
+    out.recipient = email_msg.recipient
+    out.subject = email_msg.subject
+    if email_msg.received_at:
+        out.received_at = _format_received_iso(email_msg.received_at)
+
+    acc = None
+    if email_msg.account_id:
+        acc = db.query(EmailAccount).filter(EmailAccount.id == email_msg.account_id).first()
+    elif email_msg.account_email:
+        acc = db.query(EmailAccount).filter(EmailAccount.email_address == email_msg.account_email).first()
+
+    default_colors = ["#60a5fa", "#34d399", "#a78bfa", "#fbbf24", "#f472b6", "#38bdf8", "#10b981", "#ef4444", "#818cf8", "#f97316", "#2dd4bf", "#c084fc"]
+    if acc:
+        out.account_email = acc.email_address
+        out.account_name = acc.name
+        out.account_color = acc.color if acc.color else default_colors[acc.order_index % len(default_colors)]
+    elif email_msg.account_email:
+        out.account_email = email_msg.account_email
+        out.account_name = email_msg.account_email
+        out.account_color = "#94a3b8"
+
+
 @router.get("/candidates", response_model=PaginatedTaskCandidates)
 def get_candidates(
     status: Optional[str] = Query(None, description="Filter by status e.g. PENDING, CREATED, IGNORED, ALL"),
@@ -413,14 +439,14 @@ def get_candidates(
 
     email_ids = [c.email_id for c in candidates if c.email_id]
     emails_by_id = {}
-    accounts_by_id = {}
     if email_ids:
         email_msgs = db.query(EmailMessage).filter(EmailMessage.id.in_(email_ids)).all()
         emails_by_id = {msg.id: msg for msg in email_msgs}
-        acc_ids = [msg.account_id for msg in email_msgs if msg.account_id]
-        if acc_ids:
-            accounts = db.query(EmailAccount).filter(EmailAccount.id.in_(acc_ids)).all()
-            accounts_by_id = {acc.id: acc for acc in accounts}
+
+    active_accounts = db.query(EmailAccount).order_by(EmailAccount.order_index.asc(), EmailAccount.id.asc()).all()
+    accounts_by_id = {acc.id: acc for acc in active_accounts}
+    accounts_by_email = {acc.email_address.lower(): acc for acc in active_accounts}
+    default_colors = ["#60a5fa", "#34d399", "#a78bfa", "#fbbf24", "#f472b6", "#38bdf8", "#10b981", "#ef4444", "#818cf8", "#f97316", "#2dd4bf", "#c084fc"]
 
     result = []
     for c in candidates:
@@ -433,10 +459,23 @@ def get_candidates(
             if email_msg.received_at:
                 out.received_at = _format_received_iso(email_msg.received_at)
 
-            acc = accounts_by_id.get(email_msg.account_id) if email_msg.account_id else None
-            account_email = acc.email_address if acc else ""
-            out.account_email = account_email
+            acc = None
+            if email_msg.account_id and email_msg.account_id in accounts_by_id:
+                acc = accounts_by_id[email_msg.account_id]
+            elif email_msg.account_email and email_msg.account_email.lower() in accounts_by_email:
+                acc = accounts_by_email[email_msg.account_email.lower()]
 
+            if acc:
+                out.account_email = acc.email_address
+                out.account_name = acc.name
+                out.account_color = acc.color if acc.color else default_colors[acc.order_index % len(default_colors)]
+            else:
+                account_email = email_msg.account_email or ""
+                out.account_email = account_email
+                out.account_name = account_email
+                out.account_color = "#94a3b8"
+
+            account_email = out.account_email or ""
             import re
             rec_str = (email_msg.recipient or "").lower()
             acc_str = (account_email or "").lower()
@@ -559,8 +598,7 @@ def update_candidate(candidate_id: int, payload: TaskCandidateUpdate, db: Sessio
     email_msg = db.query(EmailMessage).filter(EmailMessage.id == candidate.email_id).first() if candidate.email_id else None
     out = TaskCandidateOut.model_validate(candidate)
     if email_msg:
-        out.sender = email_msg.sender
-        out.subject = email_msg.subject
+        _enrich_candidate_out(out, email_msg, db)
     return out
 
 @router.post("/candidates/{candidate_id}/prepare-task", response_model=TaskCandidateOut)
@@ -595,11 +633,7 @@ def prepare_task_with_ai(
 
     out = TaskCandidateOut.model_validate(candidate)
     if email_msg:
-        out.sender = email_msg.sender
-        out.recipient = email_msg.recipient
-        out.subject = email_msg.subject
-        if email_msg.received_at:
-            out.received_at = _format_received_iso(email_msg.received_at)
+        _enrich_candidate_out(out, email_msg, db)
     return out
 
 @router.post("/candidates/{candidate_id}/create-task")

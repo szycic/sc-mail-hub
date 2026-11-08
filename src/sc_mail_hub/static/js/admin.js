@@ -707,7 +707,141 @@ function renderIngestionCalendar(data) {
   }
 
   gridEl.innerHTML = html;
+  renderMonthlyAccountBreakdownTable(data);
 }
+
+function renderMonthlyAccountBreakdownTable(data) {
+  const breakdownEl = document.getElementById("ingestion-cal-account-breakdown");
+  if (!breakdownEl) return;
+
+  const series = data.series || [];
+  if (series.length === 0) {
+    breakdownEl.innerHTML = "";
+    return;
+  }
+
+  const dailyCounts = data.daily_counts || {};
+  const numDays = data.days_in_month || 1;
+  const monthTotal = Object.values(dailyCounts).reduce((sum, d) => sum + (d.total || 0), 0);
+
+  const accountRows = series.map(s => {
+    let accCount = 0;
+    let peakDayStr = null;
+    let peakDayCount = 0;
+
+    Object.entries(dailyCounts).forEach(([dStr, d]) => {
+      const cnt = (d.by_account && d.by_account[s.account_id]) || 0;
+      accCount += cnt;
+      if (cnt > peakDayCount) {
+        peakDayCount = cnt;
+        peakDayStr = dStr;
+      }
+    });
+
+    const sharePct = monthTotal > 0 ? ((accCount / monthTotal) * 100).toFixed(1) : "0.0";
+    const avgPerDay = (accCount / numDays).toFixed(1);
+
+    let peakDayFormatted = "—";
+    if (peakDayCount > 0 && peakDayStr) {
+      const d = new Date(peakDayStr + "T00:00:00");
+      const fDate = d.toLocaleDateString("default", { month: "short", day: "numeric" });
+      peakDayFormatted = `${fDate} (${peakDayCount})`;
+    }
+
+    const isSelected = window.selectedAccounts && window.selectedAccounts.has(s.account_id);
+    const isFilteredOut = window.selectedAccounts && window.selectedAccounts.size > 0 && !isSelected;
+
+    return {
+      ...s,
+      count: accCount,
+      sharePct,
+      avgPerDay,
+      peakDayFormatted,
+      isSelected,
+      isFilteredOut
+    };
+  });
+
+  const totalAvgPerDay = numDays > 0 ? (monthTotal / numDays).toFixed(1) : "0.0";
+
+  let rowsHtml = accountRows.map(row => {
+    const activeStyle = row.isSelected
+      ? `background:rgba(255,255,255,0.06); outline:1px solid ${row.color};`
+      : (row.isFilteredOut ? `opacity:0.4;` : '');
+
+    return `
+      <tr class="cal-breakdown-row" style="cursor:pointer; transition:background 0.15s ease; border-bottom:1px solid rgba(255,255,255,0.05); ${activeStyle}"
+          onclick="onLegendAccountClick('${escapeHtml(row.account_id)}', event)"
+          title="Click to toggle filter for ${escapeHtml(row.account_name)}">
+        <td style="padding:8px 10px; display:flex; align-items:center; gap:8px;">
+          <span style="width:9px; height:9px; border-radius:50%; background:${row.color}; box-shadow:0 0 6px ${row.color}80; display:inline-block; flex-shrink:0;"></span>
+          <span style="color:var(--text-main); font-weight:600;">${escapeHtml(row.account_name)}</span>
+          ${row.isSelected ? `<span style="font-size:10px; color:${row.color}; margin-left:4px;">✓ active</span>` : ''}
+        </td>
+        <td style="padding:8px 10px; text-align:right; font-weight:700; color:var(--text-main); font-variant-numeric:tabular-nums;">
+          ${row.count}
+        </td>
+        <td style="padding:8px 10px; text-align:right; color:var(--text-dim); font-variant-numeric:tabular-nums;">
+          ${row.sharePct}%
+        </td>
+        <td style="padding:8px 10px; text-align:right; color:var(--text-dim); font-variant-numeric:tabular-nums;">
+          ${row.avgPerDay} / day
+        </td>
+        <td style="padding:8px 10px; text-align:right; color:var(--text-dim); font-size:11px; font-variant-numeric:tabular-nums;">
+          ${row.peakDayFormatted}
+        </td>
+        <td style="padding:8px 10px; width:130px;">
+          <div style="background:rgba(255,255,255,0.08); border-radius:4px; height:6px; overflow:hidden; width:100%;">
+            <div style="width:${row.sharePct}%; height:100%; background:${row.color}; border-radius:4px;"></div>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join("");
+
+  breakdownEl.innerHTML = `
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
+      <div style="font-size:12px; font-weight:700; color:var(--text-main); display:flex; align-items:center; gap:6px;">
+        <span>📊 Monthly Traffic Share</span>
+        <span style="font-size:11px; font-weight:400; color:var(--text-dim);">• ${escapeHtml(data.month_name || '')}</span>
+      </div>
+      <span style="font-size:11px; color:var(--text-dim);">
+        Click any row to filter calendar
+      </span>
+    </div>
+
+    <div style="overflow-x:auto;">
+      <table style="width:100%; border-collapse:collapse; font-size:12px;">
+        <thead>
+          <tr style="border-bottom:1px solid rgba(255,255,255,0.1); color:var(--text-dim); font-size:11px; text-transform:uppercase; letter-spacing:0.5px;">
+            <th style="padding:6px 10px; text-align:left; font-weight:600;">Account</th>
+            <th style="padding:6px 10px; text-align:right; font-weight:600;">Volume</th>
+            <th style="padding:6px 10px; text-align:right; font-weight:600;">Share</th>
+            <th style="padding:6px 10px; text-align:right; font-weight:600;">Avg / Day</th>
+            <th style="padding:6px 10px; text-align:right; font-weight:600;">Peak Day</th>
+            <th style="padding:6px 10px; text-align:left; font-weight:600; width:130px;">Distribution</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rowsHtml}
+        </tbody>
+        <tfoot>
+          <tr style="border-top:1px solid rgba(255,255,255,0.15); font-weight:700; color:var(--text-main); background:rgba(255,255,255,0.02);">
+            <td style="padding:8px 10px;">Total Month Traffic</td>
+            <td style="padding:8px 10px; text-align:right; color:#60a5fa; font-variant-numeric:tabular-nums;">${monthTotal}</td>
+            <td style="padding:8px 10px; text-align:right; font-variant-numeric:tabular-nums;">100%</td>
+            <td style="padding:8px 10px; text-align:right; color:var(--text-dim); font-variant-numeric:tabular-nums;">${totalAvgPerDay} / day</td>
+            <td style="padding:8px 10px; text-align:right; color:var(--text-dim); font-size:11px;">
+              ${data.peak_day ? `${data.peak_day.date ? new Date(data.peak_day.date + "T00:00:00").toLocaleDateString("default", { month: "short", day: "numeric" }) : ""} (${data.peak_day.count})` : "—"}
+            </td>
+            <td style="padding:8px 10px;"></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  `;
+}
+window.renderMonthlyAccountBreakdownTable = renderMonthlyAccountBreakdownTable;
 
 function handleDayMouseEnter(cellEl, event, dateStr) {
   if (isRecentTouch()) return;

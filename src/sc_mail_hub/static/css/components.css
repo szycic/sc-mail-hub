@@ -1106,3 +1106,13 @@ kbd {
   color: #ffffff;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
 }
+
+/* Monthly Account Breakdown Table Styles */
+.cal-breakdown-row {
+  cursor: pointer;
+  transition: background 0.15s ease, opacity 0.15s ease;
+}
+
+.cal-breakdown-row:hover td {
+  background: rgba(255, 255, 255, 0.05);
+}
