@@ -223,12 +223,53 @@ function initPopoverHoverListeners() {
   }
 }
 
-function onLegendAccountClick(accId) {
-  const current = window.calendarAccountFilter || "all";
-  if (accId === "all" || current === accId) {
-    window.calendarAccountFilter = "all";
+function onLegendAccountClick(accId, event) {
+  if (event) {
+    event.stopPropagation();
+  }
+
+  if (!window.selectedAccounts) {
+    window.selectedAccounts = new Set();
+  }
+
+  const allSeries = (window.activeIngestionView === "calendar"
+    ? window.currentCalendarData?.series
+    : window.currentSyncChartData?.series) || [];
+
+  if (accId === "all") {
+    window.selectedAccounts.clear();
   } else {
-    window.calendarAccountFilter = accId;
+    // If Shift/Alt click while in "All" mode: select all accounts EXCEPT this one (exclude)
+    if (event && (event.shiftKey || event.altKey) && window.selectedAccounts.size === 0 && allSeries.length > 1) {
+      allSeries.forEach(s => {
+        if (s.account_id !== accId) {
+          window.selectedAccounts.add(s.account_id);
+        }
+      });
+    } else if (window.selectedAccounts.size === 0) {
+      // First account clicked while in "All" mode: focus on this single account
+      window.selectedAccounts.add(accId);
+    } else {
+      // Multiple-select toggle
+      if (window.selectedAccounts.has(accId)) {
+        window.selectedAccounts.delete(accId);
+      } else {
+        window.selectedAccounts.add(accId);
+      }
+      // If user selected all available accounts, or deselected all, reset to "All" mode
+      if (window.selectedAccounts.size === 0 || (allSeries.length > 0 && window.selectedAccounts.size >= allSeries.length)) {
+        window.selectedAccounts.clear();
+      }
+    }
+  }
+
+  // Sync legacy variable
+  if (window.selectedAccounts.size === 0) {
+    window.calendarAccountFilter = "all";
+  } else if (window.selectedAccounts.size === 1) {
+    window.calendarAccountFilter = Array.from(window.selectedAccounts)[0];
+  } else {
+    window.calendarAccountFilter = Array.from(window.selectedAccounts);
   }
 
   hideChartPopover();
@@ -255,26 +296,39 @@ function renderAccountFilterLegend(series) {
     return;
   }
 
-  const selAccount = window.calendarAccountFilter || "all";
-  const isAll = selAccount === "all";
+  if (!window.selectedAccounts) {
+    window.selectedAccounts = new Set();
+    if (window.calendarAccountFilter && window.calendarAccountFilter !== "all") {
+      if (Array.isArray(window.calendarAccountFilter)) {
+        window.selectedAccounts = new Set(window.calendarAccountFilter);
+      } else {
+        window.selectedAccounts = new Set([window.calendarAccountFilter]);
+      }
+    }
+  }
+
+  const isAll = window.selectedAccounts.size === 0;
 
   let html = `
     <button type="button" class="legend-filter-chip ${isAll ? 'active' : 'dimmed'}"
-      onclick="onLegendAccountClick('all')"
+      onclick="onLegendAccountClick('all', event)"
       title="Show all accounts">
       <span>👥 All Accounts</span>
     </button>
   `;
 
   html += series.map(s => {
-    const isSelected = !isAll && s.account_id === selAccount;
+    const isSelected = !isAll && window.selectedAccounts.has(s.account_id);
     const isDimmed = !isAll && !isSelected;
     const activeClass = isSelected ? 'active' : (isDimmed ? 'dimmed' : '');
     const activeStyle = isSelected ? `border-color:${s.color}; box-shadow:0 0 8px ${s.color}50;` : '';
+    const titleText = isSelected
+      ? `Click to deselect ${escapeHtml(s.account_name)}`
+      : (isAll ? `Filter by ${escapeHtml(s.account_name)} (Shift+click to exclude)` : `Add ${escapeHtml(s.account_name)} to filter`);
     return `
       <button type="button" class="legend-filter-chip ${activeClass}" style="${activeStyle}"
-        onclick="onLegendAccountClick('${escapeHtml(s.account_id)}')"
-        title="Filter by ${escapeHtml(s.account_name)}">
+        onclick="onLegendAccountClick('${escapeHtml(s.account_id)}', event)"
+        title="${titleText}">
         <span style="width:8px; height:8px; border-radius:50%; background:${s.color}; display:inline-block; flex-shrink:0;"></span>
         <span>${escapeHtml(s.account_name)}</span>
         ${isSelected ? `<span style="font-size:10px; margin-left:3px; opacity:0.8;">✕</span>` : ''}
@@ -502,8 +556,10 @@ function renderIngestionCalendar(data) {
     renderPickerMonthsGrid();
   }
 
-  const selAccount = window.calendarAccountFilter || "all";
-  const isAll = selAccount === "all";
+  if (!window.selectedAccounts) {
+    window.selectedAccounts = new Set();
+  }
+  const isAll = window.selectedAccounts.size === 0;
 
   // Render clickable account filter legend chips
   if (data.series) {
@@ -520,7 +576,11 @@ function renderIngestionCalendar(data) {
   let maxCount = 1;
 
   Object.entries(dailyCounts).forEach(([dStr, d]) => {
-    const count = isAll ? (d.total || 0) : ((d.by_account && d.by_account[selAccount]) || 0);
+    const count = isAll
+      ? (d.total || 0)
+      : Object.entries(d.by_account || {}).reduce((sum, [accId, cnt]) => {
+          return sum + (window.selectedAccounts.has(accId) ? cnt : 0);
+        }, 0);
     filteredMonthTotal += count;
     if (count > maxCount) maxCount = count;
     if (count > filteredPeakCount) {
@@ -562,7 +622,11 @@ function renderIngestionCalendar(data) {
   for (let day = 1; day <= numDays; day++) {
     const dStr = `${data.year}-${String(data.month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
     const dayData = dailyCounts[dStr] || { total: 0, by_account: {} };
-    const count = isAll ? (dayData.total || 0) : ((dayData.by_account && dayData.by_account[selAccount]) || 0);
+    const count = isAll
+      ? (dayData.total || 0)
+      : Object.entries(dayData.by_account || {}).reduce((sum, [accId, cnt]) => {
+          return sum + (window.selectedAccounts.has(accId) ? cnt : 0);
+        }, 0);
     const isToday = dStr === todayStr;
 
     let densityClass = "cal-density-0";
@@ -579,29 +643,27 @@ function renderIngestionCalendar(data) {
 
     let miniBarHtml = "";
     if (count > 0) {
-      if (isAll) {
-        let segments = [];
-        let accountedCount = 0;
-        (data.series || []).forEach(s => {
-          const cnt = (dayData.by_account && dayData.by_account[s.account_id]) || 0;
-          if (cnt > 0) {
-            accountedCount += cnt;
-            const pct = ((cnt / count) * 100).toFixed(1);
-            segments.push(`<div class="cal-day-bar-segment" style="width:${pct}%; background:${s.color};"></div>`);
-          }
-        });
-        if (count > accountedCount) {
-          const remainder = count - accountedCount;
-          const pct = ((remainder / count) * 100).toFixed(1);
-          segments.push(`<div class="cal-day-bar-segment" style="width:${pct}%; background:#94a3b8;"></div>`);
+      let segments = [];
+      let accountedCount = 0;
+      const activeSeries = isAll
+        ? (data.series || [])
+        : (data.series || []).filter(s => window.selectedAccounts.has(s.account_id));
+
+      activeSeries.forEach(s => {
+        const cnt = (dayData.by_account && dayData.by_account[s.account_id]) || 0;
+        if (cnt > 0) {
+          accountedCount += cnt;
+          const pct = ((cnt / count) * 100).toFixed(1);
+          segments.push(`<div class="cal-day-bar-segment" style="width:${pct}%; background:${s.color};"></div>`);
         }
-        if (segments.length > 0) {
-          miniBarHtml = `<div class="cal-day-bar">${segments.join("")}</div>`;
-        }
-      } else {
-        const matchSeries = (data.series || []).find(s => s.account_id === selAccount);
-        const accColor = matchSeries ? matchSeries.color : "#60a5fa";
-        miniBarHtml = `<div class="cal-day-bar"><div class="cal-day-bar-segment" style="width:100%; background:${accColor};"></div></div>`;
+      });
+      if (count > accountedCount && isAll) {
+        const remainder = count - accountedCount;
+        const pct = ((remainder / count) * 100).toFixed(1);
+        segments.push(`<div class="cal-day-bar-segment" style="width:${pct}%; background:#94a3b8;"></div>`);
+      }
+      if (segments.length > 0) {
+        miniBarHtml = `<div class="cal-day-bar">${segments.join("")}</div>`;
       }
     }
 
@@ -647,9 +709,12 @@ function showCalendarDayPopover(cellEl, event, dateStr) {
   const total = dayData.total || 0;
   const byAccount = dayData.by_account || {};
 
-  const selAccount = window.calendarAccountFilter || "all";
-  const isAll = selAccount === "all";
-  const displayTotal = isAll ? total : (byAccount[selAccount] || 0);
+  const isAll = !window.selectedAccounts || window.selectedAccounts.size === 0;
+  const displayTotal = isAll
+    ? total
+    : Object.entries(byAccount).reduce((sum, [accId, cnt]) => {
+        return sum + (window.selectedAccounts.has(accId) ? cnt : 0);
+      }, 0);
 
   const d = new Date(dateStr + "T00:00:00");
   const dateFormatted = d.toLocaleDateString("default", { weekday: "short", month: "short", day: "numeric", year: "numeric" });
@@ -661,14 +726,17 @@ function showCalendarDayPopover(cellEl, event, dateStr) {
     itemsHtml = (data.series || []).map(s => {
       const count = byAccount[s.account_id] || 0;
       if (count === 0) return "";
-      const isFilteredMatch = !isAll && s.account_id === selAccount;
+      const isFilteredMatch = !isAll && window.selectedAccounts.has(s.account_id);
       const highlightStyle = isFilteredMatch
         ? `background:rgba(96, 165, 250, 0.2); border:1px solid ${s.color};`
         : `background:rgba(255, 255, 255, 0.03); border:1px solid rgba(255, 255, 255, 0.06);`;
+      const titleText = isFilteredMatch
+        ? `Click to deselect ${escapeHtml(s.account_name)}`
+        : `Click to add ${escapeHtml(s.account_name)} to filter`;
       return `
         <div class="popover-account-row"
-             onclick="onLegendAccountClick('${escapeHtml(s.account_id)}')"
-             title="Click to filter by ${escapeHtml(s.account_name)}"
+             onclick="onLegendAccountClick('${escapeHtml(s.account_id)}', event)"
+             title="${titleText}"
              style="display:flex; align-items:center; justify-content:space-between; gap:16px; padding:4px 8px; border-radius:6px; cursor:pointer; transition:all 0.15s ease; ${highlightStyle}">
           <span style="display:inline-flex; align-items:center; gap:6px;">
             <span style="width:8px; height:8px; border-radius:50%; background:${s.color}; display:inline-block;"></span>
@@ -682,7 +750,7 @@ function showCalendarDayPopover(cellEl, event, dateStr) {
     if (!itemsHtml) {
       itemsHtml = Object.entries(byAccount).map(([acc, cnt]) => `
         <div class="popover-account-row"
-             onclick="onLegendAccountClick('${escapeHtml(acc)}')"
+             onclick="onLegendAccountClick('${escapeHtml(acc)}', event)"
              title="Click to filter by ${escapeHtml(acc)}"
              style="display:flex; align-items:center; justify-content:space-between; gap:16px; padding:4px 8px; border-radius:6px; cursor:pointer; transition:all 0.15s ease;">
           <span>${escapeHtml(acc)}</span>
@@ -692,15 +760,21 @@ function showCalendarDayPopover(cellEl, event, dateStr) {
     }
   }
 
-  // Peak Hour detection (all accounts or specific filtered account)
+  // Peak Hour detection (all accounts or specific filtered accounts)
   let peakHour = null;
   if (isAll) {
     peakHour = dayData.peak_hour;
-  } else if (dayData.hourly_by_account && dayData.hourly_by_account[selAccount]) {
-    const accHours = dayData.hourly_by_account[selAccount];
+  } else if (dayData.hourly_by_account) {
+    const combinedHours = {};
+    for (const accId of window.selectedAccounts) {
+      const accHours = dayData.hourly_by_account[accId] || {};
+      for (const [h, c] of Object.entries(accHours)) {
+        combinedHours[h] = (combinedHours[h] || 0) + c;
+      }
+    }
     let topH = null;
     let topC = 0;
-    for (const [h, c] of Object.entries(accHours)) {
+    for (const [h, c] of Object.entries(combinedHours)) {
       if (c > topC) {
         topC = c;
         topH = parseInt(h, 10);
@@ -774,15 +848,15 @@ function renderSyncChartData(data) {
 
   renderAccountFilterLegend(series);
 
-  const selAccount = window.calendarAccountFilter || "all";
-  const isAll = selAccount === "all";
+  const isAll = !window.selectedAccounts || window.selectedAccounts.size === 0;
 
   const dayTotals = days.map((_, dayIdx) => {
     if (isAll) {
       return series.reduce((sum, s) => sum + (s.counts[dayIdx] || 0), 0);
     } else {
-      const match = series.find(s => s.account_id === selAccount);
-      return match ? (match.counts[dayIdx] || 0) : 0;
+      return series.reduce((sum, s) => {
+        return sum + (window.selectedAccounts.has(s.account_id) ? (s.counts[dayIdx] || 0) : 0);
+      }, 0);
     }
   });
   const maxVal = Math.max(...dayTotals, 1);
@@ -798,9 +872,9 @@ function renderSyncChartData(data) {
     const segmentsHtml = series.map(s => {
       const val = s.counts[dayIdx] || 0;
       if (val === 0) return "";
-      const isFilteredMatch = !isAll && s.account_id === selAccount;
-      if (!isAll && !isFilteredMatch) return "";
-      const pct = isAll ? ((val / (total || 1)) * 100).toFixed(1) : 100;
+      const isFilteredMatch = isAll || window.selectedAccounts.has(s.account_id);
+      if (!isFilteredMatch) return "";
+      const pct = (total > 0) ? ((val / total) * 100).toFixed(1) : 0;
       return `
         <div class="chart-segment"
              data-acc="${escapeHtml(s.account_name)}"
@@ -875,19 +949,21 @@ function showChartPopover(pillEl, event, dayIdx) {
   const dayLabel = data.days[dayIdx] || "";
   const series = data.series || [];
 
-  const selAccount = window.calendarAccountFilter || "all";
-  const isAll = selAccount === "all";
+  const isAll = !window.selectedAccounts || window.selectedAccounts.size === 0;
 
   const itemsHtml = series.map(s => {
     const val = s.counts[dayIdx] || 0;
-    const isFilteredMatch = !isAll && s.account_id === selAccount;
+    const isFilteredMatch = !isAll && window.selectedAccounts.has(s.account_id);
     const highlightStyle = isFilteredMatch
       ? `background:rgba(96, 165, 250, 0.2); border:1px solid ${s.color};`
       : `background:rgba(255, 255, 255, 0.03); border:1px solid rgba(255, 255, 255, 0.06);`;
+    const titleText = isFilteredMatch
+      ? `Click to deselect ${escapeHtml(s.account_name)}`
+      : `Click to add ${escapeHtml(s.account_name)} to filter`;
     return `
       <div class="popover-account-row"
-           onclick="onLegendAccountClick('${escapeHtml(s.account_id)}')"
-           title="Click to filter by ${escapeHtml(s.account_name)}"
+           onclick="onLegendAccountClick('${escapeHtml(s.account_id)}', event)"
+           title="${titleText}"
            style="display:flex; align-items:center; justify-content:space-between; gap:16px; padding:4px 8px; border-radius:6px; cursor:pointer; transition:all 0.15s ease; ${highlightStyle}">
         <span style="display:inline-flex; align-items:center; gap:6px;">
           <span style="width:8px; height:8px; border-radius:50%; background:${s.color}; display:inline-block;"></span>
@@ -900,7 +976,7 @@ function showChartPopover(pillEl, event, dayIdx) {
 
   const dayTotal = isAll
     ? series.reduce((sum, s) => sum + (s.counts[dayIdx] || 0), 0)
-    : (series.find(s => s.account_id === selAccount)?.counts[dayIdx] || 0);
+    : series.reduce((sum, s) => sum + (window.selectedAccounts.has(s.account_id) ? (s.counts[dayIdx] || 0) : 0), 0);
 
   const labelText = isAll ? "Day Total" : "Account Total";
 
