@@ -137,8 +137,9 @@ def get_sync_chart_data(tz_offset: int = 0, db: Session = Depends(get_db)):
     day_labels = [d.strftime("%b %d") for d in days]
     day_iso_strs = [d.strftime("%Y-%m-%d") for d in days]
 
-    active_accounts = db.query(EmailAccount).all()
+    active_accounts = db.query(EmailAccount).order_by(EmailAccount.order_index.asc(), EmailAccount.id.asc()).all()
     active_emails = {acc.email_address: acc.name for acc in active_accounts}
+    account_colors = {acc.email_address: acc.color for acc in active_accounts if acc.color}
 
     start_local_dt = datetime.combine(days[0], datetime.min.time())
     start_utc_dt = start_local_dt + timedelta(minutes=tz_offset)
@@ -146,7 +147,9 @@ def get_sync_chart_data(tz_offset: int = 0, db: Session = Depends(get_db)):
     account_data: Dict[str, Dict[str, int]] = {}
     account_map: Dict[str, str] = {}
 
-    for email_addr, name in active_emails.items():
+    for acc in active_accounts:
+        email_addr = acc.email_address
+        name = acc.name
         account_data[email_addr] = {d_str: 0 for d_str in day_iso_strs}
         account_map[email_addr] = f"{name} ({email_addr})" if (name and name != email_addr) else email_addr
 
@@ -187,18 +190,26 @@ def get_sync_chart_data(tz_offset: int = 0, db: Session = Depends(get_db)):
                 account_data[target_key][d_str] = account_data[target_key].get(d_str, 0) + 1
 
     series = []
-    colors = ["#60a5fa", "#34d399", "#a78bfa", "#fbbf24", "#f472b6", "#38bdf8"]
+    default_colors = ["#60a5fa", "#34d399", "#a78bfa", "#fbbf24", "#f472b6", "#38bdf8", "#10b981", "#f43f5e", "#818cf8", "#fb923c"]
 
-    active_keys = [k for k in account_data if sum(account_data[k].values()) > 0 or k in active_emails]
-    if "System" in active_keys and sum(account_data["System"].values()) == 0 and len(active_keys) > 1:
-        active_keys.remove("System")
+    # Active accounts in their configured order:
+    ordered_keys = [acc.email_address for acc in active_accounts]
 
-    for idx, acc_key in enumerate(active_keys):
-        counts = [account_data[acc_key][d_str] for d_str in day_iso_strs]
+    # Inactive / disconnected accounts that have ingestion data:
+    for k in account_data:
+        if k not in ordered_keys and sum(account_data[k].values()) > 0:
+            ordered_keys.append(k)
+
+    if "System" in ordered_keys and sum(account_data.get("System", {}).values()) == 0 and len(ordered_keys) > 1:
+        ordered_keys.remove("System")
+
+    for idx, acc_key in enumerate(ordered_keys):
+        counts = [account_data.get(acc_key, {}).get(d_str, 0) for d_str in day_iso_strs]
+        color = account_colors.get(acc_key) or default_colors[idx % len(default_colors)]
         series.append({
             "account_id": acc_key,
             "account_name": account_map.get(acc_key, acc_key),
-            "color": colors[idx % len(colors)],
+            "color": color,
             "counts": counts
         })
 
@@ -230,8 +241,9 @@ def get_ingestion_calendar_data(
     first_weekday, num_days = calendar.monthrange(target_year, target_month)
     month_name = date(target_year, target_month, 1).strftime("%B %Y")
 
-    active_accounts = db.query(EmailAccount).all()
+    active_accounts = db.query(EmailAccount).order_by(EmailAccount.order_index.asc(), EmailAccount.id.asc()).all()
     active_emails = {acc.email_address: acc.name for acc in active_accounts}
+    account_colors = {acc.email_address: acc.color for acc in active_accounts if acc.color}
 
     month_iso_strs = [f"{target_year:04d}-{target_month:02d}-{day:02d}" for day in range(1, num_days + 1)]
 
@@ -318,19 +330,25 @@ def get_ingestion_calendar_data(
             if top_cnt > 0:
                 d_info["peak_hour"] = {"hour": int(top_h_str), "count": top_cnt}
 
-    colors = ["#60a5fa", "#34d399", "#a78bfa", "#fbbf24", "#f472b6", "#38bdf8"]
+    default_colors = ["#60a5fa", "#34d399", "#a78bfa", "#fbbf24", "#f472b6", "#38bdf8", "#10b981", "#f43f5e", "#818cf8", "#fb923c"]
     account_map: Dict[str, str] = {}
-    for email_addr, name in active_emails.items():
+    for acc in active_accounts:
+        email_addr = acc.email_address
+        name = acc.name
         account_map[email_addr] = f"{name} ({email_addr})" if (name and name != email_addr) else email_addr
 
     series = []
-    sorted_acc_keys = sorted(list(all_account_keys))
-    for idx, acc_key in enumerate(sorted_acc_keys):
+    ordered_acc_keys = [acc.email_address for acc in active_accounts]
+    remaining_keys = sorted([k for k in all_account_keys if k not in ordered_acc_keys])
+    ordered_acc_keys.extend(remaining_keys)
+
+    for idx, acc_key in enumerate(ordered_acc_keys):
         acc_name = account_map.get(acc_key, acc_key if acc_key == "System" else f"{acc_key} (Disconnected)")
+        color = account_colors.get(acc_key) or default_colors[idx % len(default_colors)]
         series.append({
             "account_id": acc_key,
             "account_name": acc_name,
-            "color": colors[idx % len(colors)]
+            "color": color
         })
 
     month_total = sum(d["total"] for d in daily_counts.values())

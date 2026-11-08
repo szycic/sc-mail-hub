@@ -1,0 +1,70 @@
+<!-- Account Edit Modal: Edit display name and custom account color -->
+<div id="edit-account-modal" class="modal-overlay" onclick="closeEditAccountModal(event)">
+  <div class="modal-card" onclick="event.stopPropagation()" style="max-width: 480px; width: 92vw;">
+    <div class="modal-header">
+      <div>
+        <span class="type-pill"
+          style="margin-bottom:6px; display:inline-block; background:rgba(59, 130, 246, 0.15); color:#60a5fa;">✏️
+          Account Settings</span>
+        <h3 style="font-size:18px; color:var(--text-main); margin-bottom:4px;">Edit Connected Account</h3>
+        <div style="font-size:13px; color:var(--text-muted);">
+          Customize display name and calendar / chart volume color.
+        </div>
+      </div>
+      <button class="modal-close-btn" onclick="closeEditAccountModal()">&times;</button>
+    </div>
+
+    <div class="modal-body" style="display:flex; flex-direction:column; gap:16px; padding-top:12px;">
+      <!-- Hidden ID -->
+      <input type="hidden" id="edit-acc-id">
+
+      <!-- Email Context Box -->
+      <div style="background:var(--bg-hover, rgba(255,255,255,0.04)); border:1px solid var(--border-color, rgba(255,255,255,0.1)); border-radius:8px; padding:10px 14px; font-size:13px; display:flex; justify-content:space-between; align-items:center;">
+        <div>
+          <div style="color:var(--text-dim); font-size:11px; font-weight:600; text-transform:uppercase;">Mailbox Address</div>
+          <div style="color:var(--text-main); font-weight:600; font-size:13px; margin-top:2px;" id="edit-acc-email-display"></div>
+        </div>
+        <span id="edit-acc-provider-pill" class="type-pill" style="font-size:11px;">IMAP</span>
+      </div>
+
+      <!-- Account Name Input -->
+      <div>
+        <label for="edit-acc-name-input" style="display:block; font-size:12px; font-weight:600; color:var(--text-dim); margin-bottom:6px;">
+          Account Display Name
+        </label>
+        <input type="text" id="edit-acc-name-input" class="text-input" placeholder="e.g. Work, Personal, Invoicing" style="width:100%;" oninput="updateEditAccountPreview()">
+      </div>
+
+      <!-- Account Color Picker -->
+      <div>
+        <label style="display:block; font-size:12px; font-weight:600; color:var(--text-dim); margin-bottom:8px;">
+          Account Color (Chart, Calendar & Legend)
+        </label>
+        
+        <!-- Preset Swatches Grid -->
+        <div id="edit-acc-swatches" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px;">
+          <!-- Dynamically populated preset palette chips -->
+        </div>
+
+        <!-- Custom Color input -->
+        <div style="display:flex; align-items:center; gap:10px; background:var(--bg-hover, rgba(255,255,255,0.03)); border:1px solid var(--border-color, rgba(255,255,255,0.08)); border-radius:8px; padding:8px 12px;">
+          <input type="color" id="edit-acc-custom-color" style="width:36px; height:32px; padding:0; border:none; border-radius:6px; cursor:pointer; background:transparent;" onchange="onCustomColorPick(this.value)">
+          <div style="flex:1;">
+            <div style="font-size:12px; color:var(--text-main); font-weight:600;">Custom Hex Color</div>
+            <div style="font-size:11px; color:var(--text-dim); font-family:monospace;" id="edit-acc-hex-label">#60a5fa</div>
+          </div>
+          <!-- Live Preview Chip -->
+          <div id="edit-acc-preview-chip" style="display:flex; align-items:center; gap:6px; padding:4px 10px; border-radius:14px; font-size:12px; font-weight:600; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.15);">
+            <span id="edit-acc-preview-dot" style="width:10px; height:10px; border-radius:50%; background:#60a5fa;"></span>
+            <span id="edit-acc-preview-text">Preview</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-footer" style="padding:16px 20px; border-top:1px solid var(--border-color); display:flex; justify-content:flex-end; gap:10px;">
+      <button type="button" class="btn btn-outline" onclick="closeEditAccountModal()">Cancel</button>
+      <button type="button" class="btn btn-primary" onclick="submitEditAccountModal()">💾 Save Changes</button>
+    </div>
+  </div>
+</div>

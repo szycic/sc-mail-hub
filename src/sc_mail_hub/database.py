@@ -74,6 +74,8 @@ def init_db():
             "ALTER TABLE system_settings ADD COLUMN daily_ingested_date VARCHAR(10)",
             "ALTER TABLE system_settings ADD COLUMN received_at_utc_migrated BOOLEAN DEFAULT 0",
             "ALTER TABLE system_settings ADD COLUMN backup_retention_days INTEGER DEFAULT 14",
+            "ALTER TABLE email_accounts ADD COLUMN color VARCHAR(30)",
+            "ALTER TABLE email_accounts ADD COLUMN order_index INTEGER DEFAULT 0",
         ]
         for sql in migrations:
             try:
@@ -81,6 +83,16 @@ def init_db():
                 conn.commit()
             except Exception:
                 pass
+
+        try:
+            conn.execute(text(
+                "UPDATE email_accounts "
+                "SET order_index = id "
+                "WHERE order_index IS NULL OR order_index = 0"
+            ))
+            conn.commit()
+        except Exception:
+            pass
 
         try:
             conn.execute(text(

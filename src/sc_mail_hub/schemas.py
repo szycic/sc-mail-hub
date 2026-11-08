@@ -89,6 +89,20 @@ class EmailAccountCreate(BaseModel):
     email_address: str
     auth_type: str = "password"  # 'oauth2', 'password'
     credentials_json: Optional[str] = None
+    color: Optional[str] = None
+    order_index: Optional[int] = 0
+
+
+class EmailAccountUpdate(BaseModel):
+    """Request payload for updating an email account's name, color, and/or display order."""
+    name: Optional[str] = None
+    color: Optional[str] = None
+    order_index: Optional[int] = None
+
+
+class AccountReorderRequest(BaseModel):
+    """Request payload for reordering email accounts."""
+    account_ids: List[int]
 
 
 class EmailAccountOut(BaseModel):
@@ -99,6 +113,8 @@ class EmailAccountOut(BaseModel):
     email_address: str
     auth_type: str
     is_active: bool
+    color: Optional[str] = None
+    order_index: int = 0
     last_synced_at: Optional[datetime] = None
     created_at: datetime
 

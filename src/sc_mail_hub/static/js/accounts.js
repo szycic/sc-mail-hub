@@ -1,6 +1,34 @@
 /**
  * Email Account Management Controller for SC Mail Hub.
+ *
+ * Handles account listing, editing (name & color), drag-and-drop reordering,
+ * IMAP credential testing, manual synchronization, and account deletion.
  */
+
+const ACCOUNT_COLOR_PALETTE = [
+  "#60a5fa", // Sky Blue
+  "#34d399", // Emerald Green
+  "#a78bfa", // Purple
+  "#fbbf24", // Amber Yellow
+  "#f472b6", // Pink
+  "#38bdf8", // Light Blue
+  "#10b981", // Mint Green
+  "#f43f5e", // Rose Red
+  "#818cf8", // Indigo
+  "#fb923c", // Orange
+  "#2dd4bf", // Teal
+  "#c084fc", // Violet
+];
+
+let cachedAccounts = [];
+let draggedAccountCard = null;
+
+function getAccountColor(acc, idx) {
+  if (acc && acc.color && acc.color.trim()) {
+    return acc.color.trim();
+  }
+  return ACCOUNT_COLOR_PALETTE[idx % ACCOUNT_COLOR_PALETTE.length];
+}
 
 async function loadAccounts() {
   const listEl = document.getElementById("accounts-list");
@@ -8,6 +36,7 @@ async function loadAccounts() {
   try {
     const res = await fetch("/api/accounts");
     const accounts = await res.json();
+    cachedAccounts = accounts;
 
     const filterAccSelect = document.getElementById("filter-account");
     if (filterAccSelect) {
@@ -36,23 +65,347 @@ async function loadAccounts() {
       return;
     }
 
-    listEl.innerHTML = accounts.map(a => `
-      <div style="display:flex; align-items:center; justify-content:space-between; padding:12px; background:rgba(0,0,0,0.2); border-radius:8px; margin-bottom:8px;">
-        <div>
-          <strong style="color:var(--text-main);">${escapeHtml(a.name)}</strong>
-          <span style="font-size:12px; color:var(--text-dim); margin-left:8px;">(${escapeHtml(a.provider).toUpperCase()} - ${escapeHtml(a.email_address)})</span>
+    listEl.innerHTML = accounts.map((a, idx) => {
+      const color = getAccountColor(a, idx);
+      const isFirst = idx === 0;
+      const isLast = idx === accounts.length - 1;
+
+      return `
+        <div class="account-item-card" data-account-id="${a.id}" draggable="true">
+          <div style="display:flex; align-items:center; gap:12px; min-width:0; flex:1;">
+            <!-- Drag Handle & Quick Reorder Controls -->
+            <div style="display:flex; align-items:center; gap:4px; flex-shrink:0;">
+              <div class="account-drag-handle" title="Drag to reorder account position">
+                ⋮⋮
+              </div>
+              <div style="display:flex; flex-direction:column; gap:2px;">
+                <button type="button" class="account-reorder-btn" title="Move Up" onclick="moveAccountOrder(${a.id}, -1)" ${isFirst ? 'disabled' : ''}>▲</button>
+                <button type="button" class="account-reorder-btn" title="Move Down" onclick="moveAccountOrder(${a.id}, 1)" ${isLast ? 'disabled' : ''}>▼</button>
+              </div>
+            </div>
+
+            <!-- Color indicator badge -->
+            <div style="width:14px; height:14px; border-radius:50%; background:${color}; flex-shrink:0; box-shadow:0 0 6px ${color}80; border:2px solid rgba(255,255,255,0.25);" title="Account color: ${color}"></div>
+
+            <!-- Account Details -->
+            <div style="min-width:0; overflow:hidden;">
+              <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                <strong style="color:var(--text-main); font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                  ${escapeHtml(a.name)}
+                </strong>
+                <span class="type-pill" style="font-size:10px; padding:1px 6px; background:rgba(255,255,255,0.06); color:var(--text-dim); text-transform:uppercase;">
+                  ${escapeHtml(a.provider)}
+                </span>
+              </div>
+              <div style="font-size:12px; color:var(--text-dim); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                ${escapeHtml(a.email_address)}
+              </div>
+            </div>
+          </div>
+
+          <!-- Actions -->
+          <div style="display:flex; gap:6px; flex-shrink:0; margin-left:12px;">
+            <button class="btn btn-outline btn-sm" onclick="openEditAccountModal(${a.id})" title="Edit account display name and volume chart color">✏️ Edit</button>
+            <button class="btn btn-outline btn-sm" onclick="testAccountConnection(${a.id})" title="Test IMAP SSL connection">🔌 Test</button>
+            <button class="btn btn-outline btn-sm" onclick="syncAccount(${a.id})" title="Fetch new emails now">⚡ Sync</button>
+            <button class="btn btn-outline btn-sm" style="color:#ef4444;" onclick="openDeleteAccountModal(${a.id}, '${escapeHtml(a.name).replace(/'/g, "\\'")}', '${escapeHtml(a.email_address).replace(/'/g, "\\'")}')" title="Disconnect account">🗑️</button>
+          </div>
         </div>
-        <div style="display:flex; gap:8px;">
-          <button class="btn btn-outline btn-sm" onclick="testAccountConnection(${a.id})">🔌 Test</button>
-          <button class="btn btn-outline btn-sm" onclick="syncAccount(${a.id})">⚡ Sync</button>
-          <button class="btn btn-outline btn-sm" style="color:#ef4444;" onclick="openDeleteAccountModal(${a.id}, '${escapeHtml(a.name).replace(/'/g, "\\'")}', '${escapeHtml(a.email_address).replace(/'/g, "\\'")}')">🗑️ Delete</button>
-        </div>
-      </div>
-    `).join("");
+      `;
+    }).join("");
+
+    initAccountDragAndDrop(listEl);
   } catch (err) {
     console.error("Accounts load error", err);
   }
 }
+
+function initAccountDragAndDrop(containerEl) {
+  const cards = containerEl.querySelectorAll(".account-item-card");
+
+  cards.forEach(card => {
+    card.addEventListener("dragstart", (e) => {
+      draggedAccountCard = card;
+      card.classList.add("dragging");
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", card.dataset.accountId);
+    });
+
+    card.addEventListener("dragend", () => {
+      if (draggedAccountCard) {
+        draggedAccountCard.classList.remove("dragging");
+        draggedAccountCard = null;
+      }
+      containerEl.querySelectorAll(".account-item-card").forEach(c => {
+        c.classList.remove("drag-over-top", "drag-over-bottom");
+      });
+    });
+
+    card.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+
+      if (!draggedAccountCard || draggedAccountCard === card) return;
+
+      const rect = card.getBoundingClientRect();
+      const midY = rect.top + rect.height / 2;
+
+      if (e.clientY < midY) {
+        card.classList.add("drag-over-top");
+        card.classList.remove("drag-over-bottom");
+      } else {
+        card.classList.add("drag-over-bottom");
+        card.classList.remove("drag-over-top");
+      }
+    });
+
+    card.addEventListener("dragleave", () => {
+      card.classList.remove("drag-over-top", "drag-over-bottom");
+    });
+
+    card.addEventListener("drop", (e) => {
+      e.preventDefault();
+      if (!draggedAccountCard || draggedAccountCard === card) return;
+
+      const rect = card.getBoundingClientRect();
+      const midY = rect.top + rect.height / 2;
+
+      if (e.clientY < midY) {
+        containerEl.insertBefore(draggedAccountCard, card);
+      } else {
+        containerEl.insertBefore(draggedAccountCard, card.nextSibling);
+      }
+
+      card.classList.remove("drag-over-top", "drag-over-bottom");
+      persistAccountOrder();
+    });
+  });
+}
+
+async function moveAccountOrder(accId, direction) {
+  const listEl = document.getElementById("accounts-list");
+  if (!listEl) return;
+
+  const card = listEl.querySelector(`.account-item-card[data-account-id="${accId}"]`);
+  if (!card) return;
+
+  if (direction === -1) {
+    const prev = card.previousElementSibling;
+    if (prev && prev.classList.contains("account-item-card")) {
+      listEl.insertBefore(card, prev);
+      await persistAccountOrder();
+    }
+  } else if (direction === 1) {
+    const next = card.nextElementSibling;
+    if (next && next.classList.contains("account-item-card")) {
+      listEl.insertBefore(next, card);
+      await persistAccountOrder();
+    }
+  }
+}
+
+async function persistAccountOrder() {
+  const listEl = document.getElementById("accounts-list");
+  if (!listEl) return;
+
+  const cards = listEl.querySelectorAll(".account-item-card");
+  const accountIds = Array.from(cards).map(c => parseInt(c.dataset.accountId)).filter(id => !isNaN(id));
+
+  if (accountIds.length === 0) return;
+
+  // Update disabled state on up/down buttons immediately in DOM
+  cards.forEach((c, idx) => {
+    const upBtn = c.querySelector('button[title="Move Up"]');
+    const downBtn = c.querySelector('button[title="Move Down"]');
+    if (upBtn) upBtn.disabled = (idx === 0);
+    if (downBtn) downBtn.disabled = (idx === cards.length - 1);
+  });
+
+  try {
+    const res = await fetch("/api/accounts/reorder", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ account_ids: accountIds })
+    });
+    if (res.ok) {
+      if (typeof showToast === "function") {
+        showToast("Account display order saved", "success");
+      }
+      refreshAdminVolumeStats();
+    } else {
+      const err = await res.json();
+      if (typeof showToast === "function") {
+        showToast(err.detail || "Failed to save account order", "error");
+      }
+    }
+  } catch (err) {
+    console.error("Account reorder error:", err);
+    if (typeof showToast === "function") {
+      showToast(`Reorder error: ${err.message}`, "error");
+    }
+  }
+}
+
+function refreshAdminVolumeStats() {
+  if (typeof loadSyncHealthStats === "function") {
+    loadSyncHealthStats();
+  }
+}
+
+// --- Edit Account Modal ---
+let selectedEditColor = "#60a5fa";
+
+function openEditAccountModal(accId) {
+  const account = cachedAccounts.find(a => a.id === accId);
+  if (!account) return;
+
+  const modal = document.getElementById("edit-account-modal");
+  const idInput = document.getElementById("edit-acc-id");
+  const nameInput = document.getElementById("edit-acc-name-input");
+  const emailDisplay = document.getElementById("edit-acc-email-display");
+  const providerPill = document.getElementById("edit-acc-provider-pill");
+  const swatchesContainer = document.getElementById("edit-acc-swatches");
+  const customColorInput = document.getElementById("edit-acc-custom-color");
+  const hexLabel = document.getElementById("edit-acc-hex-label");
+
+  if (!modal) return;
+
+  idInput.value = account.id;
+  nameInput.value = account.name || "";
+  if (emailDisplay) emailDisplay.textContent = account.email_address || "";
+  if (providerPill) providerPill.textContent = (account.provider || "IMAP").toUpperCase();
+
+  const accountIdx = cachedAccounts.findIndex(a => a.id === accId);
+  selectedEditColor = getAccountColor(account, accountIdx);
+
+  if (customColorInput) customColorInput.value = selectedEditColor;
+  if (hexLabel) hexLabel.textContent = selectedEditColor;
+
+  if (swatchesContainer) {
+    swatchesContainer.innerHTML = ACCOUNT_COLOR_PALETTE.map(c => `
+      <button type="button" class="color-swatch-btn ${c.toLowerCase() === selectedEditColor.toLowerCase() ? 'selected' : ''}"
+        style="background:${c};"
+        onclick="selectEditAccountColor('${c}')"
+        title="Color ${c}">
+      </button>
+    `).join("");
+  }
+
+  updateEditAccountPreview();
+  modal.classList.add("active");
+  setTimeout(() => {
+    nameInput.focus();
+    nameInput.select();
+  }, 50);
+}
+
+function closeEditAccountModal(e) {
+  if (e && e.target && !e.target.classList.contains("modal-overlay")) return;
+  const modal = document.getElementById("edit-account-modal");
+  if (modal) modal.classList.remove("active");
+}
+
+function selectEditAccountColor(color) {
+  selectedEditColor = color;
+  const swatchesContainer = document.getElementById("edit-acc-swatches");
+  if (swatchesContainer) {
+    swatchesContainer.querySelectorAll(".color-swatch-btn").forEach(btn => {
+      const btnBg = btn.style.backgroundColor;
+      btn.classList.toggle("selected", btn.title.toLowerCase().includes(color.toLowerCase()));
+    });
+  }
+
+  const customColorInput = document.getElementById("edit-acc-custom-color");
+  const hexLabel = document.getElementById("edit-acc-hex-label");
+  if (customColorInput) customColorInput.value = color;
+  if (hexLabel) hexLabel.textContent = color;
+
+  updateEditAccountPreview();
+}
+
+function onCustomColorPick(val) {
+  selectedEditColor = val;
+  const swatchesContainer = document.getElementById("edit-acc-swatches");
+  if (swatchesContainer) {
+    swatchesContainer.querySelectorAll(".color-swatch-btn").forEach(btn => {
+      btn.classList.toggle("selected", btn.title.toLowerCase().includes(val.toLowerCase()));
+    });
+  }
+  const hexLabel = document.getElementById("edit-acc-hex-label");
+  if (hexLabel) hexLabel.textContent = val;
+
+  updateEditAccountPreview();
+}
+
+function updateEditAccountPreview() {
+  const nameInput = document.getElementById("edit-acc-name-input");
+  const previewText = document.getElementById("edit-acc-preview-text");
+  const previewDot = document.getElementById("edit-acc-preview-dot");
+  const previewChip = document.getElementById("edit-acc-preview-chip");
+
+  const nameVal = nameInput && nameInput.value.trim() ? nameInput.value.trim() : "Account";
+
+  if (previewText) previewText.textContent = nameVal;
+  if (previewDot) previewDot.style.background = selectedEditColor;
+  if (previewChip) {
+    previewChip.style.borderColor = selectedEditColor;
+    previewChip.style.boxShadow = `0 0 10px ${selectedEditColor}40`;
+  }
+}
+
+async function submitEditAccountModal() {
+  const idInput = document.getElementById("edit-acc-id");
+  const nameInput = document.getElementById("edit-acc-name-input");
+
+  const accId = parseInt(idInput.value);
+  const name = nameInput.value.trim();
+
+  if (!name) {
+    if (typeof showToast === "function") {
+      showToast("Please enter an account name", "error");
+    }
+    return;
+  }
+
+  try {
+    const res = await fetch(`/api/accounts/${accId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: name,
+        color: selectedEditColor
+      })
+    });
+
+    if (res.ok) {
+      if (typeof showToast === "function") {
+        showToast("Account settings updated successfully!", "success");
+      }
+      closeEditAccountModal();
+      await loadAccounts();
+      refreshAdminVolumeStats();
+    } else {
+      const err = await res.json();
+      if (typeof showToast === "function") {
+        showToast(err.detail || "Failed to update account", "error");
+      }
+    }
+  } catch (err) {
+    console.error("Account update error:", err);
+    if (typeof showToast === "function") {
+      showToast(`Update error: ${err.message}`, "error");
+    }
+  }
+}
+
+// Expose modal functions to window
+window.openEditAccountModal = openEditAccountModal;
+window.closeEditAccountModal = closeEditAccountModal;
+window.selectEditAccountColor = selectEditAccountColor;
+window.onCustomColorPick = onCustomColorPick;
+window.updateEditAccountPreview = updateEditAccountPreview;
+window.submitEditAccountModal = submitEditAccountModal;
+window.moveAccountOrder = moveAccountOrder;
 
 async function testAccountConnection(accId) {
   showToast("Testing IMAP SSL connection...", "info");

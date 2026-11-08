@@ -26,6 +26,8 @@ class EmailAccount(Base):
     auth_type: Any = Column(String(50), default="imap")  # 'oauth2', 'password'
     credentials_json: Any = Column(Text, nullable=True)  # Store JSON with host, port, pass, oauth tokens
     is_active: Any = Column(Boolean, default=True)
+    color: Any = Column(String(30), nullable=True)
+    order_index: Any = Column(Integer, default=0, nullable=False)
     last_uid: Any = Column(Integer, nullable=True)
     uid_validity: Any = Column(String(64), nullable=True)
     last_synced_at: Any = Column(DateTime, nullable=True)

@@ -6,11 +6,12 @@ manual email sync triggers, and account deletion.
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from typing import List
 import json
 from sc_mail_hub.database import get_db
 from sc_mail_hub.models import EmailAccount, EmailMessage
-from sc_mail_hub.schemas import EmailAccountCreate, EmailAccountOut
+from sc_mail_hub.schemas import EmailAccountCreate, EmailAccountOut, EmailAccountUpdate, AccountReorderRequest
 from sc_mail_hub.services.email_service import EmailService
 from sc_mail_hub.services.ai_service import AIService
 
@@ -18,42 +19,52 @@ router = APIRouter(prefix="/api/accounts", tags=["Email Accounts"])
 
 @router.get("", response_model=List[EmailAccountOut])
 def list_accounts(db: Session = Depends(get_db)):
-    return db.query(EmailAccount).all()
+    return db.query(EmailAccount).order_by(EmailAccount.order_index.asc(), EmailAccount.id.asc()).all()
 
 @router.get("/filter-options")
 def get_account_filter_options(db: Session = Depends(get_db)):
-    active_accounts = db.query(EmailAccount).all()
-    active_emails = {acc.email_address: acc.name for acc in active_accounts}
+    active_accounts = db.query(EmailAccount).order_by(EmailAccount.order_index.asc(), EmailAccount.id.asc()).all()
+    active_emails = {acc.email_address: (acc.name, acc.color) for acc in active_accounts}
 
     distinct_rows = db.query(EmailMessage.account_email).filter(EmailMessage.account_email.isnot(None)).distinct().all()
     all_emails = [r[0] for r in distinct_rows if r[0]]
 
-    for email_addr in active_emails:
-        if email_addr not in all_emails:
-            all_emails.append(email_addr)
+    ordered_emails = []
+    for acc in active_accounts:
+        if acc.email_address not in ordered_emails:
+            ordered_emails.append(acc.email_address)
+
+    for email_addr in all_emails:
+        if email_addr not in ordered_emails:
+            ordered_emails.append(email_addr)
 
     options = []
-    for email_addr in all_emails:
+    for email_addr in ordered_emails:
         is_active = email_addr in active_emails
-        name = active_emails.get(email_addr)
+        name, color = active_emails.get(email_addr, (None, None))
         label = f"{name} ({email_addr})" if (is_active and name and name != email_addr) else (email_addr if is_active else f"{email_addr} (Disconnected)")
         options.append({
             "email_address": email_addr,
             "label": label,
+            "color": color,
             "is_active": is_active
         })
 
-    options.sort(key=lambda x: (not x["is_active"], x["label"].lower()))
     return options
 
 @router.post("", response_model=EmailAccountOut)
 def create_account(payload: EmailAccountCreate, db: Session = Depends(get_db)):
+    max_order = db.query(func.max(EmailAccount.order_index)).scalar() or 0
+    order_idx = payload.order_index if (payload.order_index is not None and payload.order_index > 0) else (max_order + 1)
+
     acc = EmailAccount(
         name=payload.name,
         provider=payload.provider.lower(),
         email_address=payload.email_address,
         auth_type=payload.auth_type,
-        credentials_json=payload.credentials_json
+        credentials_json=payload.credentials_json,
+        color=payload.color.strip() if payload.color else None,
+        order_index=order_idx
     )
     db.add(acc)
     db.commit()
@@ -64,6 +75,40 @@ def create_account(payload: EmailAccountCreate, db: Session = Depends(get_db)):
     ).update({EmailMessage.account_id: acc.id}, synchronize_session=False)
     db.commit()
 
+    return acc
+
+@router.put("/reorder")
+def reorder_accounts(payload: AccountReorderRequest, db: Session = Depends(get_db)):
+    """Reorder connected email accounts by persisting their new order_index."""
+    for idx, acc_id in enumerate(payload.account_ids):
+        db.query(EmailAccount).filter(EmailAccount.id == acc_id).update(
+            {"order_index": idx}, synchronize_session=False
+        )
+    db.commit()
+    return {"message": "Accounts reordered successfully", "account_ids": payload.account_ids}
+
+@router.patch("/{account_id}", response_model=EmailAccountOut)
+def update_account(account_id: int, payload: EmailAccountUpdate, db: Session = Depends(get_db)):
+    """Update account display name, custom color, or order index."""
+    acc = db.query(EmailAccount).filter(EmailAccount.id == account_id).first()
+    if not acc:
+        raise HTTPException(status_code=404, detail="Account not found")
+
+    if payload.name is not None:
+        trimmed_name = payload.name.strip()
+        if not trimmed_name:
+            raise HTTPException(status_code=400, detail="Account name cannot be empty")
+        acc.name = trimmed_name
+
+    if payload.color is not None:
+        trimmed_color = payload.color.strip()
+        acc.color = trimmed_color if trimmed_color else None
+
+    if payload.order_index is not None:
+        acc.order_index = payload.order_index
+
+    db.commit()
+    db.refresh(acc)
     return acc
 
 @router.delete("/{account_id}")
