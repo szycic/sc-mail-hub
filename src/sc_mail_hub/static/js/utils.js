@@ -218,3 +218,18 @@ function formatDateTime(dateInput) {
   return `${day} ${month} ${year}, ${hours}:${mins}`;
 }
 
+function forceReloadApp() {
+  if ("caches" in window) {
+    try {
+      caches.keys().then((names) => {
+        names.forEach((name) => caches.delete(name));
+      });
+    } catch (e) {}
+  }
+  const url = new URL(window.location.origin + window.location.pathname);
+  url.searchParams.set("_bust", Date.now().toString());
+  window.location.href = url.toString();
+}
+
+window.forceReloadApp = forceReloadApp;
+
