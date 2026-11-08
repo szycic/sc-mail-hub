@@ -95,17 +95,33 @@
       <div id="ingestion-calendar-view" style="display:none;" class="ingestion-calendar-container">
         <!-- Calendar Toolbar: Month Nav & Metrics -->
         <div class="ingestion-cal-toolbar">
-          <div class="ingestion-cal-nav">
-            <button type="button" class="btn btn-outline btn-sm" onclick="navCalendarMonth(-1)"
-              style="padding:3px 8px; font-size:11px;" title="Previous Month">◀</button>
-            <span id="ingestion-cal-title" class="ingestion-cal-title">Loading...</span>
-            <button type="button" class="btn btn-outline btn-sm" onclick="navCalendarMonth(1)"
-              style="padding:3px 8px; font-size:11px;" title="Next Month">▶</button>
-            <select id="ingestion-cal-month-select" class="select-input" onchange="onCalendarMonthSelect(this.value)"
-              style="padding:2px 8px; font-size:11px; max-width:140px; margin-left:4px;">
-            </select>
-            <button type="button" class="btn btn-outline btn-sm" onclick="jumpCalendarToday()"
-              style="padding:3px 8px; font-size:11px; margin-left:4px;">Today</button>
+          <div class="ingestion-cal-nav" style="position:relative;">
+            <button type="button" class="btn btn-outline btn-sm ingestion-cal-nav-btn" onclick="navCalendarMonth(-1)"
+              title="Previous Month">◀</button>
+            <button type="button" id="ingestion-cal-title-btn" class="ingestion-cal-title-btn" onclick="toggleMonthYearPicker(event)"
+              title="Click to select month and year">
+              <span id="ingestion-cal-title">Loading...</span>
+              <span class="cal-title-caret">▾</span>
+            </button>
+            <button type="button" class="btn btn-outline btn-sm ingestion-cal-nav-btn" onclick="navCalendarMonth(1)"
+              title="Next Month">▶</button>
+            <button type="button" class="btn btn-outline btn-sm ingestion-cal-today-btn" onclick="jumpCalendarToday()"
+              title="Jump to current month">Today</button>
+
+            <!-- Month/Year Interactive Picker Modal -->
+            <div id="ingestion-month-year-picker" class="ingestion-month-picker" style="display:none;" onclick="event.stopPropagation()">
+              <div class="picker-year-header">
+                <button type="button" class="btn btn-ghost btn-sm" onclick="pickerChangeYear(-1)" title="Previous Year">◀</button>
+                <span id="picker-year-label" class="picker-year-title">2026</span>
+                <button type="button" class="btn btn-ghost btn-sm" onclick="pickerChangeYear(1)" title="Next Year">▶</button>
+              </div>
+              <div id="picker-months-grid" class="picker-months-grid">
+              </div>
+              <div class="picker-footer">
+                <button type="button" class="btn btn-ghost btn-xs" onclick="pickerJumpThisMonth()">Current Month</button>
+                <button type="button" class="btn btn-outline btn-xs" onclick="closeMonthYearPicker()">Close</button>
+              </div>
+            </div>
           </div>
 
           <div class="ingestion-cal-metrics">

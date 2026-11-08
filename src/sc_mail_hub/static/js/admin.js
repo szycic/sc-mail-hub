@@ -235,20 +235,105 @@ function jumpCalendarToday() {
   loadIngestionCalendar(d.getFullYear(), d.getMonth() + 1);
 }
 
+let pickerViewingYear = null;
+const MONTH_NAMES_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+function toggleMonthYearPicker(event) {
+  if (event) {
+    event.stopPropagation();
+    event.preventDefault();
+  }
+  const pickerEl = document.getElementById("ingestion-month-year-picker");
+  const titleBtn = document.getElementById("ingestion-cal-title-btn");
+  if (!pickerEl) return;
+
+  const isOpen = pickerEl.style.display === "block" || pickerEl.style.display === "flex";
+  if (isOpen) {
+    closeMonthYearPicker();
+  } else {
+    pickerViewingYear = window.currentCalendarYear || (new Date().getFullYear());
+    renderPickerMonthsGrid();
+    pickerEl.style.display = "flex";
+    if (titleBtn) titleBtn.classList.add("picker-open");
+  }
+}
+
+function closeMonthYearPicker() {
+  const pickerEl = document.getElementById("ingestion-month-year-picker");
+  const titleBtn = document.getElementById("ingestion-cal-title-btn");
+  if (pickerEl) pickerEl.style.display = "none";
+  if (titleBtn) titleBtn.classList.remove("picker-open");
+}
+
+function pickerChangeYear(delta) {
+  if (!pickerViewingYear) {
+    pickerViewingYear = window.currentCalendarYear || (new Date().getFullYear());
+  }
+  pickerViewingYear += delta;
+  renderPickerMonthsGrid();
+}
+
+function selectMonthFromPicker(monthNum) {
+  if (!pickerViewingYear) {
+    pickerViewingYear = window.currentCalendarYear || (new Date().getFullYear());
+  }
+  loadIngestionCalendar(pickerViewingYear, monthNum);
+  closeMonthYearPicker();
+}
+
+function pickerJumpThisMonth() {
+  const now = new Date();
+  loadIngestionCalendar(now.getFullYear(), now.getMonth() + 1);
+  closeMonthYearPicker();
+}
+
+function renderPickerMonthsGrid() {
+  const yearLabel = document.getElementById("picker-year-label");
+  const gridEl = document.getElementById("picker-months-grid");
+  if (!gridEl) return;
+
+  if (!pickerViewingYear) {
+    pickerViewingYear = window.currentCalendarYear || (new Date().getFullYear());
+  }
+  if (yearLabel) yearLabel.textContent = pickerViewingYear;
+
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth() + 1;
+
+  const activeYear = window.currentCalendarYear;
+  const activeMonth = window.currentCalendarMonth;
+
+  const availableMonths = (window.currentCalendarData && window.currentCalendarData.available_months) || [];
+
+  gridEl.innerHTML = MONTH_NAMES_SHORT.map((name, idx) => {
+    const mNum = idx + 1;
+    const mIso = `${pickerViewingYear}-${String(mNum).padStart(2, '0')}`;
+    const isActive = pickerViewingYear === activeYear && mNum === activeMonth;
+    const isToday = pickerViewingYear === currentYear && mNum === currentMonth;
+    const hasData = availableMonths.includes(mIso);
+
+    let classes = ["picker-month-btn"];
+    if (isActive) classes.push("active");
+    if (isToday) classes.push("is-today");
+    if (hasData) classes.push("has-data");
+
+    return `
+      <button type="button" class="${classes.join(' ')}" onclick="selectMonthFromPicker(${mNum})" title="${name} ${pickerViewingYear}${hasData ? ' (has ingestion data)' : ''}">
+        ${name}
+      </button>
+    `;
+  }).join("");
+}
+
 function renderIngestionCalendar(data) {
   const titleEl = document.getElementById("ingestion-cal-title");
   if (titleEl) titleEl.textContent = data.month_name || `${data.year}-${data.month}`;
 
-  const selectEl = document.getElementById("ingestion-cal-month-select");
-  if (selectEl && data.available_months) {
-    const curVal = `${data.year}-${String(data.month).padStart(2, '0')}`;
-    selectEl.innerHTML = data.available_months.map(mStr => {
-      const [y, m] = mStr.split("-");
-      const d = new Date(Number(y), Number(m) - 1, 1);
-      const label = d.toLocaleString("default", { month: "short", year: "numeric" });
-      const sel = mStr === curVal ? "selected" : "";
-      return `<option value="${mStr}" ${sel}>${label}</option>`;
-    }).join("");
+  // If picker modal is open, refresh it so active month reflects newly loaded data
+  const pickerEl = document.getElementById("ingestion-month-year-picker");
+  if (pickerEl && (pickerEl.style.display === "block" || pickerEl.style.display === "flex")) {
+    renderPickerMonthsGrid();
   }
 
   const totalEl = document.getElementById("cal-stat-month-total");
@@ -582,10 +667,20 @@ function hideChartPopover() {
   activePopoverEl = null;
 }
 
-// Dismiss popover when clicking or tapping outside of chart pills / calendar cells
+// Dismiss popover and month picker when clicking or tapping outside
 document.addEventListener("click", (e) => {
   if (!e.target.closest(".chart-bar-pill") && !e.target.closest(".ingestion-cal-day") && !e.target.closest("#sync-chart-popover")) {
     hideChartPopover();
+  }
+  if (!e.target.closest("#ingestion-month-year-picker") && !e.target.closest("#ingestion-cal-title-btn")) {
+    closeMonthYearPicker();
+  }
+});
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    hideChartPopover();
+    closeMonthYearPicker();
   }
 });
 
@@ -1311,6 +1406,12 @@ window.hideChartPopover = hideChartPopover;
 window.updateChartPopoverPos = updateChartPopoverPos;
 window.loadSyncChartData = loadSyncChartData;
 window.renderSyncChartData = renderSyncChartData;
+window.toggleMonthYearPicker = toggleMonthYearPicker;
+window.closeMonthYearPicker = closeMonthYearPicker;
+window.pickerChangeYear = pickerChangeYear;
+window.selectMonthFromPicker = selectMonthFromPicker;
+window.pickerJumpThisMonth = pickerJumpThisMonth;
+window.renderPickerMonthsGrid = renderPickerMonthsGrid;
 
 
 

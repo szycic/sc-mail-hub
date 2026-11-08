@@ -536,8 +536,171 @@ kbd {
   font-size: 13px;
   font-weight: 700;
   color: var(--text-main);
-  min-width: 120px;
   text-align: center;
+}
+
+/* Interactive Month Title Button (Popular modal style) */
+.ingestion-cal-title-btn {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-main);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.15s ease;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+}
+
+.ingestion-cal-title-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(96, 165, 250, 0.4);
+}
+
+.ingestion-cal-title-btn.picker-open {
+  border-color: #60a5fa;
+  box-shadow: 0 0 10px rgba(96, 165, 250, 0.3);
+}
+
+.cal-title-caret {
+  font-size: 10px;
+  color: var(--text-dim);
+  transition: transform 0.2s ease;
+}
+
+.ingestion-cal-title-btn.picker-open .cal-title-caret {
+  transform: rotate(180deg);
+  color: #60a5fa;
+}
+
+.ingestion-cal-nav-btn {
+  padding: 4px 8px;
+  font-size: 11px;
+  min-height: 28px;
+}
+
+.ingestion-cal-today-btn {
+  padding: 4px 9px;
+  font-size: 11px;
+  min-height: 28px;
+}
+
+/* Month/Year Interactive Picker Popover Modal */
+.ingestion-month-picker {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 10000;
+  background: rgba(15, 23, 42, 0.98);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 10px;
+  padding: 12px;
+  width: 260px;
+  max-width: 90vw;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  animation: pickerFadeIn 0.15s ease;
+}
+
+@keyframes pickerFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.picker-year-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.picker-year-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-main);
+  letter-spacing: 0.5px;
+}
+
+.picker-months-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.picker-month-btn {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 7px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  text-align: center;
+  position: relative;
+  transition: all 0.15s ease;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+}
+
+.picker-month-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-main);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.picker-month-btn.active {
+  background: #3b82f6 !important;
+  color: #ffffff !important;
+  border-color: #60a5fa !important;
+  font-weight: 700;
+  box-shadow: 0 0 10px rgba(59, 130, 246, 0.4);
+}
+
+.picker-month-btn.is-today:not(.active) {
+  border-color: #60a5fa;
+  color: #60a5fa;
+}
+
+.picker-month-btn.has-data::after {
+  content: "";
+  position: absolute;
+  bottom: 2px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #10b981;
+}
+
+.picker-month-btn.active.has-data::after {
+  background: #ffffff;
+}
+
+.picker-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .ingestion-cal-metrics {
@@ -680,7 +843,24 @@ kbd {
 
   .ingestion-cal-title {
     min-width: auto;
+    font-size: 12px;
+  }
+
+  .ingestion-cal-title-btn {
     flex: 1;
+    justify-content: center;
+    font-size: 12px;
+    padding: 5px 8px;
+  }
+
+  .ingestion-month-picker {
+    left: 50%;
+    transform: translateX(-50%);
+    width: 270px;
+  }
+
+  .picker-month-btn {
+    padding: 8px 4px;
     font-size: 12px;
   }
 
