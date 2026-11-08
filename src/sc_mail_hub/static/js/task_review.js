@@ -178,28 +178,12 @@ async function fillTaskReviewForm(candidate) {
   setTaskReviewFormSubmittingState(false);
 
   // Populate Right Column: Original Email Reference with Link Highlighting
-  const accountBadgeEl = document.getElementById("review-account-badge");
   const senderEl = document.getElementById("review-email-sender");
   const recipientEl = document.getElementById("review-email-recipient");
   const subjectEl = document.getElementById("review-email-subject");
   const dateEl = document.getElementById("review-email-received");
   const updatedEl = document.getElementById("review-candidate-updated");
   const bodyEl = document.getElementById("review-email-body");
-
-  if (accountBadgeEl) {
-    const accName = candidate.account_name || candidate.account_email;
-    const accColor = candidate.account_color || "#60a5fa";
-    if (accName) {
-      accountBadgeEl.innerHTML = `
-        <span class="type-pill" style="background:${accColor}18; color:${accColor}; border:1px solid ${accColor}40; font-weight:600; font-size:11px; padding:2px 8px; border-radius:4px; display:inline-flex; align-items:center; gap:5px;">
-          <span style="width:7px; height:7px; border-radius:50%; background:${accColor}; box-shadow:0 0 5px ${accColor}90; display:inline-block;"></span>
-          <span>${escapeHtml(accName)}</span>
-        </span>
-      `;
-    } else {
-      accountBadgeEl.innerHTML = "";
-    }
-  }
 
   if (senderEl) senderEl.textContent = candidate.sender || "Unknown Sender";
   if (recipientEl) recipientEl.textContent = candidate.recipient || "Me";
