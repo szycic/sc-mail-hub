@@ -190,7 +190,7 @@ def get_sync_chart_data(tz_offset: int = 0, db: Session = Depends(get_db)):
                 account_data[target_key][d_str] = account_data[target_key].get(d_str, 0) + 1
 
     series = []
-    default_colors = ["#60a5fa", "#34d399", "#a78bfa", "#fbbf24", "#f472b6", "#38bdf8", "#10b981", "#ef4444", "#818cf8", "#f97316", "#2dd4bf", "#c084fc"]
+    from sc_mail_hub.config import DEFAULT_ACCOUNT_COLORS
 
     # Active accounts in their configured order:
     ordered_keys = [acc.email_address for acc in active_accounts]
@@ -205,7 +205,7 @@ def get_sync_chart_data(tz_offset: int = 0, db: Session = Depends(get_db)):
 
     for idx, acc_key in enumerate(ordered_keys):
         counts = [account_data.get(acc_key, {}).get(d_str, 0) for d_str in day_iso_strs]
-        color = account_colors.get(acc_key) or default_colors[idx % len(default_colors)]
+        color = account_colors.get(acc_key) or DEFAULT_ACCOUNT_COLORS[idx % len(DEFAULT_ACCOUNT_COLORS)]
         series.append({
             "account_id": acc_key,
             "account_name": account_map.get(acc_key, acc_key),
@@ -330,7 +330,7 @@ def get_ingestion_calendar_data(
             if top_cnt > 0:
                 d_info["peak_hour"] = {"hour": int(top_h_str), "count": top_cnt}
 
-    default_colors = ["#60a5fa", "#34d399", "#a78bfa", "#fbbf24", "#f472b6", "#38bdf8", "#10b981", "#ef4444", "#818cf8", "#f97316", "#2dd4bf", "#c084fc"]
+    from sc_mail_hub.config import DEFAULT_ACCOUNT_COLORS
     account_map: Dict[str, str] = {}
     for acc in active_accounts:
         email_addr = acc.email_address
@@ -344,7 +344,7 @@ def get_ingestion_calendar_data(
 
     for idx, acc_key in enumerate(ordered_acc_keys):
         acc_name = account_map.get(acc_key, acc_key if acc_key == "System" else f"{acc_key} (Disconnected)")
-        color = account_colors.get(acc_key) or default_colors[idx % len(default_colors)]
+        color = account_colors.get(acc_key) or DEFAULT_ACCOUNT_COLORS[idx % len(DEFAULT_ACCOUNT_COLORS)]
         series.append({
             "account_id": acc_key,
             "account_name": acc_name,

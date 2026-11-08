@@ -334,6 +334,17 @@ function refreshAdminVolumeStats() {
   if (typeof loadSyncHealthStats === "function") {
     loadSyncHealthStats();
   }
+  if (typeof loadSyncChartData === "function") {
+    window.currentSyncChartData = null;
+    loadSyncChartData();
+  }
+  if (typeof loadIngestionCalendar === "function") {
+    window.currentCalendarData = null;
+    loadIngestionCalendar(window.currentCalendarYear, window.currentCalendarMonth);
+  }
+  if (typeof loadCandidates === "function") {
+    loadCandidates();
+  }
 }
 
 // --- Edit Account Modal ---

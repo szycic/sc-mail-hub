@@ -25,6 +25,11 @@ function switchTab(tabName, updateHistory = true) {
     if (target === "admin") {
       if (typeof loadAdminSettings === "function") loadAdminSettings();
       if (typeof loadSyncHealthStats === "function") loadSyncHealthStats();
+      if (typeof loadSyncChartData === "function") loadSyncChartData();
+      if (typeof loadIngestionCalendar === "function") loadIngestionCalendar(window.currentCalendarYear, window.currentCalendarMonth);
+    }
+    if (target === "inbox") {
+      if (typeof loadCandidates === "function") loadCandidates();
     }
   }
 }

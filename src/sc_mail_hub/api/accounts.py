@@ -57,13 +57,18 @@ def create_account(payload: EmailAccountCreate, db: Session = Depends(get_db)):
     max_order = db.query(func.max(EmailAccount.order_index)).scalar() or 0
     order_idx = payload.order_index if (payload.order_index is not None and payload.order_index > 0) else (max_order + 1)
 
+    acc_color = payload.color.strip() if payload.color else None
+    if not acc_color:
+        from sc_mail_hub.config import DEFAULT_ACCOUNT_COLORS
+        acc_color = DEFAULT_ACCOUNT_COLORS[order_idx % len(DEFAULT_ACCOUNT_COLORS)]
+
     acc = EmailAccount(
         name=payload.name,
         provider=payload.provider.lower(),
         email_address=payload.email_address,
         auth_type=payload.auth_type,
         credentials_json=payload.credentials_json,
-        color=payload.color.strip() if payload.color else None,
+        color=acc_color,
         order_index=order_idx
     )
     db.add(acc)

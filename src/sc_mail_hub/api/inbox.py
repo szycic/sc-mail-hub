@@ -398,11 +398,16 @@ def _enrich_candidate_out(out: TaskCandidateOut, email_msg: Optional[EmailMessag
     elif email_msg.account_email:
         acc = db.query(EmailAccount).filter(EmailAccount.email_address == email_msg.account_email).first()
 
-    default_colors = ["#60a5fa", "#34d399", "#a78bfa", "#fbbf24", "#f472b6", "#38bdf8", "#10b981", "#ef4444", "#818cf8", "#f97316", "#2dd4bf", "#c084fc"]
+    from sc_mail_hub.config import DEFAULT_ACCOUNT_COLORS
     if acc:
         out.account_email = acc.email_address
         out.account_name = acc.name
-        out.account_color = acc.color if acc.color else default_colors[acc.order_index % len(default_colors)]
+        if acc.color:
+            out.account_color = acc.color
+        else:
+            active_accounts = db.query(EmailAccount).order_by(EmailAccount.order_index.asc(), EmailAccount.id.asc()).all()
+            account_idx = next((i for i, a in enumerate(active_accounts) if a.id == acc.id), 0)
+            out.account_color = DEFAULT_ACCOUNT_COLORS[account_idx % len(DEFAULT_ACCOUNT_COLORS)]
     elif email_msg.account_email:
         out.account_email = email_msg.account_email
         out.account_name = email_msg.account_email
@@ -446,7 +451,8 @@ def get_candidates(
     active_accounts = db.query(EmailAccount).order_by(EmailAccount.order_index.asc(), EmailAccount.id.asc()).all()
     accounts_by_id = {acc.id: acc for acc in active_accounts}
     accounts_by_email = {acc.email_address.lower(): acc for acc in active_accounts}
-    default_colors = ["#60a5fa", "#34d399", "#a78bfa", "#fbbf24", "#f472b6", "#38bdf8", "#10b981", "#ef4444", "#818cf8", "#f97316", "#2dd4bf", "#c084fc"]
+    account_idx_by_id = {acc.id: idx for idx, acc in enumerate(active_accounts)}
+    from sc_mail_hub.config import DEFAULT_ACCOUNT_COLORS
 
     result = []
     for c in candidates:
@@ -468,7 +474,7 @@ def get_candidates(
             if acc:
                 out.account_email = acc.email_address
                 out.account_name = acc.name
-                out.account_color = acc.color if acc.color else default_colors[acc.order_index % len(default_colors)]
+                out.account_color = acc.color if acc.color else DEFAULT_ACCOUNT_COLORS[account_idx_by_id.get(acc.id, 0) % len(DEFAULT_ACCOUNT_COLORS)]
             else:
                 account_email = email_msg.account_email or ""
                 out.account_email = account_email

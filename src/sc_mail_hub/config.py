@@ -13,7 +13,7 @@ load_dotenv()
 class Settings:
     """Central settings class holding system environment configuration."""
     PROJECT_NAME: str = "SC Mail Hub"
-    VERSION: str = "1.6.3"
+    VERSION: str = "1.6.4"
     DB_PATH: str = os.getenv("DB_PATH", "data/sc_mail_hub.db")
     DB_URL: str = os.getenv("DB_URL", f"sqlite:///{DB_PATH}")
     HOST: str = os.getenv("HOST", "0.0.0.0")
@@ -32,3 +32,19 @@ class Settings:
 
 
 settings = Settings()
+
+DEFAULT_ACCOUNT_COLORS = [
+    "#60a5fa",  # Blue
+    "#34d399",  # Green
+    "#a78bfa",  # Purple
+    "#fbbf24",  # Amber
+    "#f472b6",  # Pink
+    "#38bdf8",  # Sky
+    "#10b981",  # Emerald
+    "#ef4444",  # Red
+    "#818cf8",  # Indigo
+    "#f97316",  # Orange
+    "#2dd4bf",  # Teal
+    "#c084fc",  # Violet
+]
+

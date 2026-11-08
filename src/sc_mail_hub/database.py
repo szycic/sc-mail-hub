@@ -85,11 +85,15 @@ def init_db():
                 pass
 
         try:
-            conn.execute(text(
-                "UPDATE email_accounts "
-                "SET order_index = id "
-                "WHERE order_index IS NULL OR order_index = 0"
-            ))
+            from sc_mail_hub.config import DEFAULT_ACCOUNT_COLORS
+            acc_rows = conn.execute(text("SELECT id, color, order_index FROM email_accounts ORDER BY order_index ASC, id ASC")).fetchall()
+            for idx, row in enumerate(acc_rows):
+                acc_id, acc_color, acc_order = row[0], row[1], row[2]
+                new_color = acc_color if acc_color else DEFAULT_ACCOUNT_COLORS[idx % len(DEFAULT_ACCOUNT_COLORS)]
+                conn.execute(
+                    text("UPDATE email_accounts SET color = :color, order_index = :order_idx WHERE id = :id"),
+                    {"color": new_color, "order_idx": idx, "id": acc_id}
+                )
             conn.commit()
         except Exception:
             pass
