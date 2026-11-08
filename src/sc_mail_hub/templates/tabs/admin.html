@@ -291,6 +291,38 @@
           </div>
         </div>
 
+        <!-- SQLite Database Rolling Backups Retention -->
+        <div
+          style="background:rgba(255,255,255,0.02); padding:16px; border-radius:8px; border:1px solid rgba(255,255,255,0.06);">
+          <div
+            style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; flex-wrap:wrap; gap:10px;">
+            <div>
+              <label style="font-size:14px; font-weight:600; color:var(--text-main); display:block;">
+                🛡️ SQLite Database Backup Retention
+              </label>
+              <span style="font-size:12px; color:var(--text-dim);">How many days of automatic rolling snapshots to retain in data/backups/ (min. 3 always preserved)</span>
+            </div>
+            <button type="button" class="btn btn-outline btn-sm" onclick="triggerManualDbBackup(this)"
+              style="font-size:12px;">
+              💾 Backup Now
+            </button>
+          </div>
+
+          <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+            <label for="admin-backup-retention-days" style="font-size:13px; color:var(--text-muted);">Keep Backups For:</label>
+            <select id="admin-backup-retention-days" class="select-input" style="max-width:220px;">
+              <option value="3">3 Days</option>
+              <option value="7">7 Days</option>
+              <option value="14" selected>14 Days (Default)</option>
+              <option value="30">30 Days</option>
+              <option value="60">60 Days</option>
+              <option value="90">90 Days</option>
+              <option value="180">180 Days</option>
+              <option value="365">365 Days (1 Year)</option>
+            </select>
+          </div>
+        </div>
+
         <!-- Web Push Notifications (Closed-App Support) -->
         <div
           style="background:rgba(255,255,255,0.02); padding:16px; border-radius:8px; border:1px solid rgba(255,255,255,0.06);">

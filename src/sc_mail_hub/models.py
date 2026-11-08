@@ -144,6 +144,9 @@ class SystemSettings(Base):
     daily_ingested_date: Any = Column(String(10), nullable=True)
     received_at_utc_migrated: Any = Column(Boolean, default=False)
 
+    # SQLite Rolling Database Backups Retention
+    backup_retention_days: Any = Column(Integer, default=14)
+
     updated_at: Any = Column(DateTime, default=_utc_now, onupdate=_utc_now)
 
 

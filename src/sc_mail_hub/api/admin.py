@@ -26,11 +26,19 @@ def get_or_create_system_settings(db: Session) -> SystemSettings:
             auto_purge_synced_enabled=False,
             purge_synced_days=30,
             auto_purge_ignored_enabled=False,
-            purge_ignored_days=30
+            purge_ignored_days=30,
+            backup_retention_days=14
         )
         db.add(sys_set)
         db.commit()
         db.refresh(sys_set)
+    elif sys_set.backup_retention_days is None:
+        sys_set.backup_retention_days = 14
+        try:
+            db.commit()
+            db.refresh(sys_set)
+        except Exception:
+            pass
     return sys_set
 
 
@@ -69,6 +77,9 @@ def update_admin_settings(payload: SystemSettingsUpdate, db: Session = Depends(g
     if payload.purge_ignored_days is not None:
         sys_set.purge_ignored_days = payload.purge_ignored_days
 
+    if payload.backup_retention_days is not None:
+        sys_set.backup_retention_days = payload.backup_retention_days
+
     db.commit()
     db.refresh(sys_set)
 
@@ -89,24 +100,24 @@ def get_sync_health_stats(tz_offset: int = 0, db: Session = Depends(get_db)):
     from sc_mail_hub.services.backup_service import DatabaseBackupService
     data = EmailService.get_sync_health_stats(db, tz_offset=tz_offset)
     try:
-        data["db_health"] = DatabaseBackupService.check_integrity()
+        data["db_health"] = DatabaseBackupService.check_integrity(db=db)
     except Exception as e:
         data["db_health"] = {"is_healthy": False, "status": "error", "message": str(e)}
     return data
 
 
 @router.get("/db-health")
-def get_database_health():
+def get_database_health(db: Session = Depends(get_db)):
     """Perform quick integrity check and return SQLite backup status."""
     from sc_mail_hub.services.backup_service import DatabaseBackupService
-    return DatabaseBackupService.check_integrity()
+    return DatabaseBackupService.check_integrity(db=db)
 
 
 @router.post("/database/backup")
-def trigger_database_backup():
+def trigger_database_backup(db: Session = Depends(get_db)):
     """Trigger an immediate SQLite database online backup with rotation."""
     from sc_mail_hub.services.backup_service import DatabaseBackupService
-    result = DatabaseBackupService.create_backup()
+    result = DatabaseBackupService.create_backup(db=db)
     if not result.get("success"):
         raise HTTPException(status_code=500, detail=result.get("error", "Database backup failed"))
     return result
@@ -568,7 +579,8 @@ def export_system_configuration(
             "auto_purge_synced_enabled": sys_set.auto_purge_synced_enabled,
             "purge_synced_days": sys_set.purge_synced_days,
             "auto_purge_ignored_enabled": sys_set.auto_purge_ignored_enabled,
-            "purge_ignored_days": sys_set.purge_ignored_days
+            "purge_ignored_days": sys_set.purge_ignored_days,
+            "backup_retention_days": getattr(sys_set, "backup_retention_days", 14)
         }
 
     if include_field_mappings:
@@ -627,6 +639,7 @@ def import_system_configuration(payload: ConfigImportRequest, db: Session = Depe
         if "purge_synced_days" in ss: sys_set.purge_synced_days = int(ss["purge_synced_days"])
         if "auto_purge_ignored_enabled" in ss: sys_set.auto_purge_ignored_enabled = bool(ss["auto_purge_ignored_enabled"])
         if "purge_ignored_days" in ss: sys_set.purge_ignored_days = int(ss["purge_ignored_days"])
+        if "backup_retention_days" in ss: sys_set.backup_retention_days = int(ss["backup_retention_days"])
         imported_summary["system_settings"] = True
 
     # 2. Update Notion Field Mappings
@@ -746,6 +759,7 @@ def reset_settings_to_defaults(db: Session = Depends(get_db)):
     sys_set.purge_synced_days = 30
     sys_set.auto_purge_ignored_enabled = False
     sys_set.purge_ignored_days = 30
+    sys_set.backup_retention_days = 14
 
     db.commit()
     db.refresh(sys_set)

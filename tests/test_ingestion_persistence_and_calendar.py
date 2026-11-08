@@ -289,3 +289,13 @@ def test_database_backup_and_integrity_endpoints(db_session, tmp_path):
     assert h2["total_backups"] >= 1
     assert h2["last_backup"] is not None
     assert h2["last_backup"]["filename"] == backup_data["filename"]
+    assert h2["retention_days"] >= 1
+
+    # 5. Test updating backup retention days in system settings
+    res_set = client.put("/api/admin/settings", json={"backup_retention_days": 7})
+    assert res_set.status_code == 200
+    set_data = res_set.json()
+    assert set_data["backup_retention_days"] == 7
+
+    from sc_mail_hub.services.backup_service import DatabaseBackupService
+    assert DatabaseBackupService.get_configured_retention_days() == 7

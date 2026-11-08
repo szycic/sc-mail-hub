@@ -73,6 +73,7 @@ def init_db():
             "ALTER TABLE system_settings ADD COLUMN daily_ingested_count INTEGER DEFAULT 0",
             "ALTER TABLE system_settings ADD COLUMN daily_ingested_date VARCHAR(10)",
             "ALTER TABLE system_settings ADD COLUMN received_at_utc_migrated BOOLEAN DEFAULT 0",
+            "ALTER TABLE system_settings ADD COLUMN backup_retention_days INTEGER DEFAULT 14",
         ]
         for sql in migrations:
             try:

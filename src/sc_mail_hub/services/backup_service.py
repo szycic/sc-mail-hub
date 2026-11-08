@@ -36,11 +36,52 @@ class DatabaseBackupService:
         return backup_dir
 
     @classmethod
-    def create_backup(cls, retention_days: int = 14) -> Dict[str, Any]:
+    def get_configured_retention_days(cls, db: Optional[Any] = None) -> int:
+        """Fetch configured backup retention days from SystemSettings, defaulting to 14."""
+        if db is not None:
+            try:
+                from sc_mail_hub.models import SystemSettings
+                sys_set = db.query(SystemSettings).first()
+                if sys_set and sys_set.backup_retention_days is not None:
+                    return max(1, int(sys_set.backup_retention_days))
+            except Exception:
+                pass
+
+        try:
+            from sc_mail_hub.database import get_db, SessionLocal
+            from sc_mail_hub.models import SystemSettings
+            from sc_mail_hub.main import app
+            session_gen = app.dependency_overrides.get(get_db, None)
+            if session_gen:
+                gen = session_gen()
+                temp_db = next(gen)
+                try:
+                    sys_set = temp_db.query(SystemSettings).first()
+                    if sys_set and sys_set.backup_retention_days is not None:
+                        return max(1, int(sys_set.backup_retention_days))
+                finally:
+                    try:
+                        next(gen)
+                    except StopIteration:
+                        pass
+            with SessionLocal() as s_db:
+                sys_set = s_db.query(SystemSettings).first()
+                if sys_set and sys_set.backup_retention_days is not None:
+                    return max(1, int(sys_set.backup_retention_days))
+        except Exception:
+            pass
+        return 14
+
+    @classmethod
+    def create_backup(cls, retention_days: Optional[int] = None, db: Optional[Any] = None) -> Dict[str, Any]:
         """Create an atomic SQLite backup file using the official online backup API.
 
         Rotates backups older than retention_days (guaranteeing at least 3 recent backups).
+        If retention_days is None, uses the value configured in SystemSettings.
         """
+        if retention_days is None:
+            retention_days = cls.get_configured_retention_days(db=db)
+
         src_path = cls.get_db_path()
         if not src_path.exists():
             return {
@@ -137,7 +178,7 @@ class DatabaseBackupService:
         return rotated
 
     @classmethod
-    def check_integrity(cls) -> Dict[str, Any]:
+    def check_integrity(cls, db: Optional[Any] = None) -> Dict[str, Any]:
         """Perform a quick integrity check on the active SQLite database."""
         db_path = cls.get_db_path()
         if not db_path.exists():
@@ -146,6 +187,7 @@ class DatabaseBackupService:
                 "status": "missing",
                 "message": f"Database file not found at {db_path}",
                 "size_mb": 0.0,
+                "retention_days": cls.get_configured_retention_days(db=db),
                 "total_backups": 0,
                 "last_backup": None
             }
@@ -175,6 +217,7 @@ class DatabaseBackupService:
                 "message": "Database passed quick integrity check" if is_ok else f"Check errors: {', '.join(rows)}",
                 "quick_check": rows,
                 "size_mb": size_mb,
+                "retention_days": cls.get_configured_retention_days(db=db),
                 "total_backups": len(backup_list),
                 "last_backup": last_backup
             }
@@ -214,3 +257,4 @@ class DatabaseBackupService:
             except Exception:
                 pass
         return result
+

@@ -60,6 +60,11 @@ async function loadAdminSettings() {
       purgeIgnoredDays.value = data.purge_ignored_days || 30;
     }
 
+    const backupRetentionDays = document.getElementById("admin-backup-retention-days");
+    if (backupRetentionDays) {
+      backupRetentionDays.value = data.backup_retention_days || 14;
+    }
+
     setupAutoRefreshTimer();
     await loadAutoIgnoreRules();
     await checkPushNotificationStatus();
@@ -1122,6 +1127,7 @@ async function saveAdminSettings(event) {
   const purgeSyncedDays = document.getElementById("admin-purge-synced-days");
   const purgeIgnoredToggle = document.getElementById("admin-purge-ignored-toggle");
   const purgeIgnoredDays = document.getElementById("admin-purge-ignored-days");
+  const backupRetentionDays = document.getElementById("admin-backup-retention-days");
 
   const payload = {
     imap_sync_enabled: imapToggle ? imapToggle.checked : true,
@@ -1131,7 +1137,8 @@ async function saveAdminSettings(event) {
     auto_purge_synced_enabled: purgeSyncedToggle ? purgeSyncedToggle.checked : false,
     purge_synced_days: purgeSyncedDays ? parseInt(purgeSyncedDays.value, 10) || 30 : 30,
     auto_purge_ignored_enabled: purgeIgnoredToggle ? purgeIgnoredToggle.checked : false,
-    purge_ignored_days: purgeIgnoredDays ? parseInt(purgeIgnoredDays.value, 10) || 30 : 30
+    purge_ignored_days: purgeIgnoredDays ? parseInt(purgeIgnoredDays.value, 10) || 30 : 30,
+    backup_retention_days: backupRetentionDays ? parseInt(backupRetentionDays.value, 10) || 14 : 14
   };
 
   try {

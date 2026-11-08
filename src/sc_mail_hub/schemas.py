@@ -175,6 +175,7 @@ class SystemSettingsOut(BaseModel):
     purge_synced_days: int
     auto_purge_ignored_enabled: bool
     purge_ignored_days: int
+    backup_retention_days: int = 14
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -189,6 +190,7 @@ class SystemSettingsUpdate(BaseModel):
     purge_synced_days: Optional[int] = Field(None, ge=1, le=365)
     auto_purge_ignored_enabled: Optional[bool] = None
     purge_ignored_days: Optional[int] = Field(None, ge=1, le=365)
+    backup_retention_days: Optional[int] = Field(None, ge=1, le=365)
 
 
 # --- Auto-Ignore Rule Schemas ---
