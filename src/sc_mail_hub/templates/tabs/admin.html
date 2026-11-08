@@ -389,40 +389,54 @@
       </div>
     </form>
 
-    <!-- Active Rules List -->
-    <div style="margin-bottom:20px;">
+    <!-- Active Rules List (Collapsible, collapsed by default) -->
+    <div style="margin-bottom:20px; background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.06); border-radius:8px; overflow:hidden;">
       <div
-        style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:10px;">
-        <h4 style="font-size:14px; font-weight:600; color:var(--text-main);">Active Rules Table</h4>
-        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+        id="rules-table-toggle-bar"
+        onclick="toggleRulesTableCollapse()"
+        style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; cursor:pointer; user-select:none; transition:background 0.15s ease;"
+        onmouseover="this.style.background='rgba(255,255,255,0.04)'"
+        onmouseout="this.style.background='transparent'"
+        title="Click to expand / collapse Active Rules Table">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <span id="rules-table-chevron" style="display:inline-block; transition:transform 0.2s ease; font-size:11px; color:var(--text-dim); transform:rotate(0deg);">▶</span>
+          <h4 style="font-size:14px; font-weight:600; color:var(--text-main); margin:0;">Active Rules Table</h4>
+          <span id="rules-count-badge" class="type-pill" style="font-size:11px; padding:1px 8px; background:rgba(255,255,255,0.06); color:var(--text-dim);">0 rules</span>
+        </div>
+        <div style="display:flex; gap:8px; align-items:center;" onclick="event.stopPropagation()">
           <button type="button" class="btn btn-outline btn-sm" onclick="seedPresetAutoIgnoreRules()"
             style="font-size:12px;">
             🌱 Load Preset Typical Rules
           </button>
+          <button type="button" class="btn btn-ghost btn-sm" id="rules-table-toggle-text-btn" onclick="toggleRulesTableCollapse()"
+            style="font-size:12px; color:var(--text-dim);">
+            Show
+          </button>
         </div>
       </div>
-      <div style="overflow-x:auto;">
 
-        <table class="data-table" style="width:100%; border-collapse:collapse; font-size:13px;">
-          <thead>
-            <tr style="border-bottom:1px solid rgba(255,255,255,0.1); text-align:left; color:var(--text-muted);">
-              <th style="padding:10px 12px; width:50px;">ID</th>
-              <th style="padding:10px 12px;">Name</th>
-              <th style="padding:10px 12px;">Type</th>
-              <th style="padding:10px 12px;">Pattern</th>
-              <th style="padding:10px 12px; text-align:center;">Active</th>
-              <th style="padding:10px 12px; text-align:right;">Actions</th>
-            </tr>
-          </thead>
-          <tbody id="rules-table-body">
-            <tr>
-              <td colspan="6" style="padding:16px; text-align:center; color:var(--text-dim);">
-                Loading rules...
-              </td>
-            </tr>
-          </tbody>
-        </table>
-
+      <div id="rules-table-wrapper" style="display:none; padding:0 16px 16px 16px; border-top:1px solid rgba(255,255,255,0.06);">
+        <div style="overflow-x:auto; margin-top:12px;">
+          <table class="data-table" style="width:100%; border-collapse:collapse; font-size:13px;">
+            <thead>
+              <tr style="border-bottom:1px solid rgba(255,255,255,0.1); text-align:left; color:var(--text-muted);">
+                <th style="padding:10px 12px; width:50px;">ID</th>
+                <th style="padding:10px 12px;">Name</th>
+                <th style="padding:10px 12px;">Type</th>
+                <th style="padding:10px 12px;">Pattern</th>
+                <th style="padding:10px 12px; text-align:center;">Active</th>
+                <th style="padding:10px 12px; text-align:right;">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="rules-table-body">
+              <tr>
+                <td colspan="6" style="padding:16px; text-align:center; color:var(--text-dim);">
+                  Loading rules...
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
 

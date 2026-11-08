@@ -1268,18 +1268,51 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
+let rulesTableCollapsed = true;
+
+function toggleRulesTableCollapse(forceState) {
+  const wrapper = document.getElementById("rules-table-wrapper");
+  const chevron = document.getElementById("rules-table-chevron");
+  const toggleBtn = document.getElementById("rules-table-toggle-text-btn");
+  if (!wrapper) return;
+
+  if (typeof forceState === "boolean") {
+    rulesTableCollapsed = forceState;
+  } else {
+    rulesTableCollapsed = !rulesTableCollapsed;
+  }
+
+  if (rulesTableCollapsed) {
+    wrapper.style.display = "none";
+    if (chevron) chevron.style.transform = "rotate(0deg)";
+    if (toggleBtn) toggleBtn.textContent = "Show";
+  } else {
+    wrapper.style.display = "block";
+    if (chevron) chevron.style.transform = "rotate(90deg)";
+    if (toggleBtn) toggleBtn.textContent = "Hide";
+  }
+}
+window.toggleRulesTableCollapse = toggleRulesTableCollapse;
+
 async function loadAutoIgnoreRules() {
   const tbody = document.getElementById("rules-table-body");
+  const countBadge = document.getElementById("rules-count-badge");
   if (!tbody) return;
 
   try {
     const res = await fetch("/api/rules");
     if (!res.ok) {
       tbody.innerHTML = `<tr><td colspan="6" style="padding:16px; text-align:center; color:var(--text-dim);">Failed to load auto-ignore rules.</td></tr>`;
+      if (countBadge) countBadge.textContent = "—";
       return;
     }
 
     const rules = await res.json();
+    const count = rules ? rules.length : 0;
+    if (countBadge) {
+      countBadge.textContent = `${count} rule${count === 1 ? '' : 's'}`;
+    }
+
     if (!rules || rules.length === 0) {
       tbody.innerHTML = `<tr><td colspan="6" style="padding:16px; text-align:center; color:var(--text-dim);">No auto-ignore rules configured. Add a rule above to automatically filter incoming emails.</td></tr>`;
       return;
@@ -1351,6 +1384,7 @@ async function addAutoIgnoreRule(event) {
       showToast(`Rule '${data.name}' created successfully!`, "success");
       if (nameInput) nameInput.value = "";
       if (patternInput) patternInput.value = "";
+      toggleRulesTableCollapse(false);
       await loadAutoIgnoreRules();
     } else {
       showToast((data && data.detail) || `Failed to create rule (HTTP ${res.status}).`, "error");
@@ -1478,6 +1512,7 @@ async function seedPresetAutoIgnoreRules() {
     const res = await fetch("/api/rules/seed-defaults", { method: "POST" });
     if (res.ok) {
       showToast("Typical preset auto-ignore rules loaded successfully!", "success");
+      toggleRulesTableCollapse(false);
       await loadAutoIgnoreRules();
     } else {
       const data = await res.json();
