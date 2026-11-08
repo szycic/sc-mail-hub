@@ -127,6 +127,16 @@ window.currentCalendarMonth = null;
 window.currentCalendarData = null;
 window.currentSyncChartData = null;
 let activePopoverEl = null;
+let lastPopoverShowTime = 0;
+let lastTouchTimestamp = 0;
+
+window.addEventListener("touchstart", () => {
+  lastTouchTimestamp = Date.now();
+}, { passive: true, capture: true });
+
+function isRecentTouch() {
+  return (Date.now() - lastTouchTimestamp) < 1200;
+}
 
 function switchIngestionView(viewType) {
   window.activeIngestionView = viewType;
@@ -403,9 +413,9 @@ function renderIngestionCalendar(data) {
       <div class="ingestion-cal-day ${densityClass} ${hasDataClass} ${todayClass}"
            data-date="${dStr}"
            onclick="toggleCalendarDayPopover(this, event, '${dStr}')"
-           onmouseenter="showCalendarDayPopover(this, event, '${dStr}')"
+           onmouseenter="handleDayMouseEnter(this, event, '${dStr}')"
            onmousemove="updateChartPopoverPos(this, event)"
-           onmouseleave="hideChartPopover()">
+           onmouseleave="handleDayMouseLeave()">
         <span class="ingestion-cal-day-num">${day}</span>
         ${total > 0 ? `<span class="ingestion-cal-day-count">${total}</span>` : ""}
       </div>
@@ -415,12 +425,23 @@ function renderIngestionCalendar(data) {
   gridEl.innerHTML = html;
 }
 
+function handleDayMouseEnter(cellEl, event, dateStr) {
+  if (isRecentTouch()) return;
+  showCalendarDayPopover(cellEl, event, dateStr);
+}
+
+function handleDayMouseLeave() {
+  if (isRecentTouch()) return;
+  hideChartPopover();
+}
+
 function showCalendarDayPopover(cellEl, event, dateStr) {
   const popoverEl = document.getElementById("sync-chart-popover");
   const bodyEl = document.getElementById("sync-chart-popover-body");
   if (!popoverEl || !bodyEl || !window.currentCalendarData) return;
 
   activePopoverEl = cellEl;
+  lastPopoverShowTime = Date.now();
   const data = window.currentCalendarData;
   const dayData = (data.daily_counts && data.daily_counts[dateStr]) || { total: 0, by_account: {} };
   const total = dayData.total || 0;
@@ -477,7 +498,14 @@ function toggleCalendarDayPopover(cellEl, event, dateStr) {
     event.preventDefault();
   }
   const popoverEl = document.getElementById("sync-chart-popover");
-  if (popoverEl && popoverEl.style.display === "block" && activePopoverEl === cellEl) {
+  const isAlreadyOpen = popoverEl && popoverEl.style.display === "block" && activePopoverEl === cellEl;
+
+  // Debounce check: if opened within last 450ms by touch/synthetic event, keep it open!
+  if (isAlreadyOpen && (Date.now() - lastPopoverShowTime < 450)) {
+    return;
+  }
+
+  if (isAlreadyOpen) {
     hideChartPopover();
   } else {
     showCalendarDayPopover(cellEl, event, dateStr);
@@ -542,9 +570,9 @@ function renderSyncChartData(data) {
         <span style="font-size:9px; color:var(--text-dim); margin-bottom:2px; opacity:${total > 0 ? '1' : '0.4'}; font-weight:600;">${total}</span>
         <div class="chart-bar-pill"
              onclick="toggleChartPopover(this, event, ${dayIdx})"
-             onmouseenter="this.style.filter='brightness(1.25)'; this.style.boxShadow='0 0 10px rgba(59,130,246,0.4)'; showChartPopover(this, event, ${dayIdx})"
+             onmouseenter="handleChartMouseEnter(this, event, ${dayIdx})"
              onmousemove="updateChartPopoverPos(this, event)"
-             onmouseleave="this.style.filter='none'; this.style.boxShadow='none'; hideChartPopover()"
+             onmouseleave="handleChartMouseLeave(this)"
              style="width:75%; max-width:28px; height:${heightPct}%; background:rgba(255,255,255,0.04); border-radius:4px 4px 0 0; display:flex; flex-direction:column-reverse; overflow:hidden; border:1px solid rgba(255,255,255,0.08); cursor:pointer; transition:all 0.15s ease;">
           ${segmentsHtml}
         </div>
@@ -555,6 +583,22 @@ function renderSyncChartData(data) {
   labelsEl.innerHTML = days.map(dayLabel => `
     <div style="flex:1;">${escapeHtml(dayLabel)}</div>
   `).join("");
+}
+
+function handleChartMouseEnter(pillEl, event, dayIdx) {
+  if (isRecentTouch()) return;
+  pillEl.style.filter = "brightness(1.25)";
+  pillEl.style.boxShadow = "0 0 10px rgba(59,130,246,0.4)";
+  showChartPopover(pillEl, event, dayIdx);
+}
+
+function handleChartMouseLeave(pillEl) {
+  if (pillEl) {
+    pillEl.style.filter = "none";
+    pillEl.style.boxShadow = "none";
+  }
+  if (isRecentTouch()) return;
+  hideChartPopover();
 }
 
 async function loadSyncChartData() {
@@ -576,6 +620,7 @@ function showChartPopover(pillEl, event, dayIdx) {
   if (!popoverEl || !bodyEl || !window.currentSyncChartData) return;
 
   activePopoverEl = pillEl;
+  lastPopoverShowTime = Date.now();
   const data = window.currentSyncChartData;
   const dayLabel = data.days[dayIdx] || "";
   const series = data.series || [];
@@ -615,7 +660,14 @@ function toggleChartPopover(pillEl, event, dayIdx) {
     event.preventDefault();
   }
   const popoverEl = document.getElementById("sync-chart-popover");
-  if (popoverEl && popoverEl.style.display === "block" && activePopoverEl === pillEl) {
+  const isAlreadyOpen = popoverEl && popoverEl.style.display === "block" && activePopoverEl === pillEl;
+
+  // Debounce check: if opened within last 450ms by touch/synthetic event, keep it open!
+  if (isAlreadyOpen && (Date.now() - lastPopoverShowTime < 450)) {
+    return;
+  }
+
+  if (isAlreadyOpen) {
     hideChartPopover();
   } else {
     showChartPopover(pillEl, event, dayIdx);
@@ -1412,6 +1464,10 @@ window.pickerChangeYear = pickerChangeYear;
 window.selectMonthFromPicker = selectMonthFromPicker;
 window.pickerJumpThisMonth = pickerJumpThisMonth;
 window.renderPickerMonthsGrid = renderPickerMonthsGrid;
+window.handleDayMouseEnter = handleDayMouseEnter;
+window.handleDayMouseLeave = handleDayMouseLeave;
+window.handleChartMouseEnter = handleChartMouseEnter;
+window.handleChartMouseLeave = handleChartMouseLeave;
 
 
 
