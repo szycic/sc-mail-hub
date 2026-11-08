@@ -707,6 +707,18 @@ function updateChartPopoverPos(pillEl, event) {
       }
     }
 
+    // Dynamic horizontal alignment of arrow towards target center, even at viewport boundaries
+    if (arrowEl) {
+      const targetCenterX = pillRect.left + (pillRect.width / 2);
+      const arrowOffsetInPopover = targetCenterX - x;
+      const minArrowLeft = 14;
+      const maxArrowLeft = Math.max(minArrowLeft, popoverRect.width - 14);
+      const clampedArrowLeft = Math.max(minArrowLeft, Math.min(arrowOffsetInPopover, maxArrowLeft));
+
+      arrowEl.style.left = `${Math.round(clampedArrowLeft)}px`;
+      arrowEl.style.marginLeft = "-4px";
+    }
+
     popoverEl.style.left = `${Math.round(x)}px`;
     popoverEl.style.top = `${Math.round(y)}px`;
   }
