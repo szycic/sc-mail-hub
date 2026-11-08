@@ -795,7 +795,7 @@ kbd {
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 6px;
-  padding: 4px 6px 7px 6px;
+  padding: 4px 6px 10px 6px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -811,7 +811,7 @@ kbd {
   bottom: 0;
   left: 0;
   right: 0;
-  height: 3.5px;
+  height: 6px;
   display: flex;
   overflow: hidden;
   background: rgba(255, 255, 255, 0.05);
