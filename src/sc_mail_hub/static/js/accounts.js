@@ -20,6 +20,17 @@ const ACCOUNT_COLOR_PALETTE = [
   "#c084fc", // Violet
 ];
 
+const DRAG_HANDLE_SVG = `
+  <svg width="12" height="18" viewBox="0 0 12 18" fill="currentColor">
+    <circle cx="3.5" cy="3.5" r="1.5" />
+    <circle cx="8.5" cy="3.5" r="1.5" />
+    <circle cx="3.5" cy="9" r="1.5" />
+    <circle cx="8.5" cy="9" r="1.5" />
+    <circle cx="3.5" cy="14.5" r="1.5" />
+    <circle cx="8.5" cy="14.5" r="1.5" />
+  </svg>
+`;
+
 let cachedAccounts = [];
 let draggedAccountCard = null;
 
@@ -67,21 +78,13 @@ async function loadAccounts() {
 
     listEl.innerHTML = accounts.map((a, idx) => {
       const color = getAccountColor(a, idx);
-      const isFirst = idx === 0;
-      const isLast = idx === accounts.length - 1;
 
       return `
         <div class="account-item-card" data-account-id="${a.id}" draggable="true">
           <div style="display:flex; align-items:center; gap:12px; min-width:0; flex:1;">
-            <!-- Drag Handle & Quick Reorder Controls -->
-            <div style="display:flex; align-items:center; gap:4px; flex-shrink:0;">
-              <div class="account-drag-handle" title="Drag to reorder account position">
-                ⋮⋮
-              </div>
-              <div style="display:flex; flex-direction:column; gap:2px;">
-                <button type="button" class="account-reorder-btn" title="Move Up" onclick="moveAccountOrder(${a.id}, -1)" ${isFirst ? 'disabled' : ''}>▲</button>
-                <button type="button" class="account-reorder-btn" title="Move Down" onclick="moveAccountOrder(${a.id}, 1)" ${isLast ? 'disabled' : ''}>▼</button>
-              </div>
+            <!-- Drag Handle -->
+            <div class="account-drag-handle" title="Drag to reorder account position">
+              ${DRAG_HANDLE_SVG}
             </div>
 
             <!-- Color indicator badge -->
@@ -122,8 +125,11 @@ async function loadAccounts() {
 
 function initAccountDragAndDrop(containerEl) {
   const cards = containerEl.querySelectorAll(".account-item-card");
+  let touchStartCard = null;
+  let touchMoved = false;
 
   cards.forEach(card => {
+    // Desktop Drag and Drop
     card.addEventListener("dragstart", (e) => {
       draggedAccountCard = card;
       card.classList.add("dragging");
@@ -179,6 +185,66 @@ function initAccountDragAndDrop(containerEl) {
       card.classList.remove("drag-over-top", "drag-over-bottom");
       persistAccountOrder();
     });
+
+    // Touch device support via drag handle
+    const handle = card.querySelector(".account-drag-handle");
+    if (handle) {
+      handle.addEventListener("touchstart", () => {
+        touchStartCard = card;
+        touchMoved = false;
+        card.classList.add("dragging");
+      }, { passive: true });
+
+      handle.addEventListener("touchmove", (e) => {
+        if (!touchStartCard) return;
+        touchMoved = true;
+        const touch = e.touches[0];
+        const targetEl = document.elementFromPoint(touch.clientX, touch.clientY);
+        const targetCard = targetEl ? targetEl.closest(".account-item-card") : null;
+
+        containerEl.querySelectorAll(".account-item-card").forEach(c => {
+          c.classList.remove("drag-over-top", "drag-over-bottom");
+        });
+
+        if (targetCard && targetCard !== touchStartCard) {
+          const rect = targetCard.getBoundingClientRect();
+          const midY = rect.top + rect.height / 2;
+          if (touch.clientY < midY) {
+            targetCard.classList.add("drag-over-top");
+          } else {
+            targetCard.classList.add("drag-over-bottom");
+          }
+        }
+      }, { passive: true });
+
+      handle.addEventListener("touchend", (e) => {
+        if (!touchStartCard) return;
+        card.classList.remove("dragging");
+
+        if (touchMoved) {
+          const touch = e.changedTouches[0];
+          const targetEl = document.elementFromPoint(touch.clientX, touch.clientY);
+          const targetCard = targetEl ? targetEl.closest(".account-item-card") : null;
+
+          if (targetCard && targetCard !== touchStartCard) {
+            const rect = targetCard.getBoundingClientRect();
+            const midY = rect.top + rect.height / 2;
+            if (touch.clientY < midY) {
+              containerEl.insertBefore(touchStartCard, targetCard);
+            } else {
+              containerEl.insertBefore(touchStartCard, targetCard.nextSibling);
+            }
+            persistAccountOrder();
+          }
+        }
+
+        containerEl.querySelectorAll(".account-item-card").forEach(c => {
+          c.classList.remove("drag-over-top", "drag-over-bottom");
+        });
+        touchStartCard = null;
+        touchMoved = false;
+      });
+    }
   });
 }
 

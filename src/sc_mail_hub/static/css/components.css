@@ -1015,18 +1015,29 @@ kbd {
 .account-drag-handle {
   cursor: grab;
   color: var(--text-dim);
-  font-size: 18px;
-  padding: 4px 6px;
+  padding: 6px 6px;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 4px;
   transition: color 0.15s ease, background 0.15s ease;
+  touch-action: none;
+}
+
+.account-drag-handle svg {
+  display: block;
+  opacity: 0.55;
+  transition: opacity 0.15s ease, transform 0.15s ease;
 }
 
 .account-drag-handle:hover {
   color: var(--text-main);
   background: rgba(255, 255, 255, 0.08);
+}
+
+.account-drag-handle:hover svg {
+  opacity: 1;
+  transform: scale(1.08);
 }
 
 .account-drag-handle:active {
