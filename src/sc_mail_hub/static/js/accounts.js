@@ -5,20 +5,38 @@
  * IMAP credential testing, manual synchronization, and account deletion.
  */
 
-const ACCOUNT_COLOR_PALETTE = [
-  "#60a5fa", // Sky Blue
-  "#34d399", // Emerald Green
+// Chromatically ordered preset color swatches: Red -> Orange -> Amber -> Green -> Emerald -> Teal -> Sky Blue -> Blue -> Indigo -> Purple -> Violet -> Pink
+const PRESET_COLOR_SWATCHES = [
+  { name: "Red", hex: "#ef4444" },
+  { name: "Orange", hex: "#f97316" },
+  { name: "Amber", hex: "#fbbf24" },
+  { name: "Green", hex: "#34d399" },
+  { name: "Emerald", hex: "#10b981" },
+  { name: "Teal", hex: "#2dd4bf" },
+  { name: "Sky Blue", hex: "#38bdf8" },
+  { name: "Blue", hex: "#60a5fa" },
+  { name: "Indigo", hex: "#818cf8" },
+  { name: "Purple", hex: "#a78bfa" },
+  { name: "Violet", hex: "#c084fc" },
+  { name: "Pink", hex: "#f472b6" },
+];
+
+const DEFAULT_ACCOUNT_PALETTE = [
+  "#60a5fa", // Blue
+  "#34d399", // Green
   "#a78bfa", // Purple
-  "#fbbf24", // Amber Yellow
+  "#fbbf24", // Amber
   "#f472b6", // Pink
-  "#38bdf8", // Light Blue
-  "#10b981", // Mint Green
-  "#f43f5e", // Rose Red
+  "#38bdf8", // Sky
+  "#10b981", // Emerald
+  "#ef4444", // Red
   "#818cf8", // Indigo
-  "#fb923c", // Orange
+  "#f97316", // Orange
   "#2dd4bf", // Teal
   "#c084fc", // Violet
 ];
+
+const ACCOUNT_COLOR_PALETTE = DEFAULT_ACCOUNT_PALETTE;
 
 const DRAG_HANDLE_SVG = `
   <svg width="12" height="18" viewBox="0 0 12 18" fill="currentColor">
@@ -348,11 +366,12 @@ function openEditAccountModal(accId) {
   if (hexLabel) hexLabel.textContent = selectedEditColor;
 
   if (swatchesContainer) {
-    swatchesContainer.innerHTML = ACCOUNT_COLOR_PALETTE.map(c => `
-      <button type="button" class="color-swatch-btn ${c.toLowerCase() === selectedEditColor.toLowerCase() ? 'selected' : ''}"
-        style="background:${c};"
-        onclick="selectEditAccountColor('${c}')"
-        title="Color ${c}">
+    swatchesContainer.innerHTML = PRESET_COLOR_SWATCHES.map(s => `
+      <button type="button" class="color-swatch-btn ${s.hex.toLowerCase() === selectedEditColor.toLowerCase() ? 'selected' : ''}"
+        data-color="${s.hex}"
+        style="background:${s.hex};"
+        onclick="selectEditAccountColor('${s.hex}')"
+        title="${s.name} (${s.hex})">
       </button>
     `).join("");
   }
@@ -376,8 +395,8 @@ function selectEditAccountColor(color) {
   const swatchesContainer = document.getElementById("edit-acc-swatches");
   if (swatchesContainer) {
     swatchesContainer.querySelectorAll(".color-swatch-btn").forEach(btn => {
-      const btnBg = btn.style.backgroundColor;
-      btn.classList.toggle("selected", btn.title.toLowerCase().includes(color.toLowerCase()));
+      const btnHex = btn.dataset.color || "";
+      btn.classList.toggle("selected", btnHex.toLowerCase() === color.toLowerCase());
     });
   }
 
@@ -394,7 +413,8 @@ function onCustomColorPick(val) {
   const swatchesContainer = document.getElementById("edit-acc-swatches");
   if (swatchesContainer) {
     swatchesContainer.querySelectorAll(".color-swatch-btn").forEach(btn => {
-      btn.classList.toggle("selected", btn.title.toLowerCase().includes(val.toLowerCase()));
+      const btnHex = btn.dataset.color || "";
+      btn.classList.toggle("selected", btnHex.toLowerCase() === val.toLowerCase());
     });
   }
   const hexLabel = document.getElementById("edit-acc-hex-label");

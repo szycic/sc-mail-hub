@@ -190,7 +190,7 @@ def get_sync_chart_data(tz_offset: int = 0, db: Session = Depends(get_db)):
                 account_data[target_key][d_str] = account_data[target_key].get(d_str, 0) + 1
 
     series = []
-    default_colors = ["#60a5fa", "#34d399", "#a78bfa", "#fbbf24", "#f472b6", "#38bdf8", "#10b981", "#f43f5e", "#818cf8", "#fb923c"]
+    default_colors = ["#60a5fa", "#34d399", "#a78bfa", "#fbbf24", "#f472b6", "#38bdf8", "#10b981", "#ef4444", "#818cf8", "#f97316", "#2dd4bf", "#c084fc"]
 
     # Active accounts in their configured order:
     ordered_keys = [acc.email_address for acc in active_accounts]
@@ -330,7 +330,7 @@ def get_ingestion_calendar_data(
             if top_cnt > 0:
                 d_info["peak_hour"] = {"hour": int(top_h_str), "count": top_cnt}
 
-    default_colors = ["#60a5fa", "#34d399", "#a78bfa", "#fbbf24", "#f472b6", "#38bdf8", "#10b981", "#f43f5e", "#818cf8", "#fb923c"]
+    default_colors = ["#60a5fa", "#34d399", "#a78bfa", "#fbbf24", "#f472b6", "#38bdf8", "#10b981", "#ef4444", "#818cf8", "#f97316", "#2dd4bf", "#c084fc"]
     account_map: Dict[str, str] = {}
     for acc in active_accounts:
         email_addr = acc.email_address
