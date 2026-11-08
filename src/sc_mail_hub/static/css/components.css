@@ -795,13 +795,32 @@ kbd {
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 6px;
-  padding: 4px 6px;
+  padding: 4px 6px 7px 6px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   position: relative;
   cursor: default;
   transition: all 0.15s ease;
+  overflow: hidden;
+}
+
+/* Mini Segmented Account Bar at the bottom of each calendar day */
+.cal-day-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 3.5px;
+  display: flex;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.cal-day-bar-segment {
+  height: 100%;
+  flex-shrink: 0;
+  transition: width 0.2s ease;
 }
 
 .ingestion-cal-day.empty {
@@ -942,8 +961,12 @@ kbd {
 
   .ingestion-cal-day {
     min-height: 36px;
-    padding: 2px 4px;
+    padding: 2px 4px 5px 4px;
     border-radius: 4px;
+  }
+
+  .cal-day-bar {
+    height: 3px;
   }
 
   .ingestion-cal-day-num {

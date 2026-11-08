@@ -577,6 +577,34 @@ function renderIngestionCalendar(data) {
     const hasDataClass = count > 0 ? "has-data" : "";
     const todayClass = isToday ? "today" : "";
 
+    let miniBarHtml = "";
+    if (count > 0) {
+      if (isAll) {
+        let segments = [];
+        let accountedCount = 0;
+        (data.series || []).forEach(s => {
+          const cnt = (dayData.by_account && dayData.by_account[s.account_id]) || 0;
+          if (cnt > 0) {
+            accountedCount += cnt;
+            const pct = ((cnt / count) * 100).toFixed(1);
+            segments.push(`<div class="cal-day-bar-segment" style="width:${pct}%; background:${s.color};"></div>`);
+          }
+        });
+        if (count > accountedCount) {
+          const remainder = count - accountedCount;
+          const pct = ((remainder / count) * 100).toFixed(1);
+          segments.push(`<div class="cal-day-bar-segment" style="width:${pct}%; background:#94a3b8;"></div>`);
+        }
+        if (segments.length > 0) {
+          miniBarHtml = `<div class="cal-day-bar">${segments.join("")}</div>`;
+        }
+      } else {
+        const matchSeries = (data.series || []).find(s => s.account_id === selAccount);
+        const accColor = matchSeries ? matchSeries.color : "#60a5fa";
+        miniBarHtml = `<div class="cal-day-bar"><div class="cal-day-bar-segment" style="width:100%; background:${accColor};"></div></div>`;
+      }
+    }
+
     html += `
       <div class="ingestion-cal-day ${densityClass} ${hasDataClass} ${todayClass}"
            data-date="${dStr}"
@@ -586,6 +614,7 @@ function renderIngestionCalendar(data) {
            onmouseleave="handleDayMouseLeave()">
         <span class="ingestion-cal-day-num">${day}</span>
         ${count > 0 ? `<span class="ingestion-cal-day-count">${count}</span>` : ""}
+        ${miniBarHtml}
       </div>
     `;
   }
